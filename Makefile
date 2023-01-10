@@ -3,7 +3,13 @@
 SHELL = /bin/sh
 DC_RUN_ARGS = --rm --user "$(shell id -u):$(shell id -g)"
 
-.PHONY : help fmt lint gotest test clean
+OS ?= linux # linux|darwin
+ARCH ?= amd64
+BUILD_PATH = bin
+BUILD_APP_NAME = go-swagger-merger
+BUILDING_FLAGS =
+
+.PHONY : help fmt lint gotest test clean build
 .DEFAULT_GOAL : help
 .SILENT : lint gotest
 
@@ -29,3 +35,7 @@ shell: ## Start shell into container with golang
 
 clean: ## Make clean
 	docker-compose down -v -t 1
+
+build: ## Build App
+	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -a -installsuffix cgo -ldflags="$(BUILDING_FLAGS)" \
+  -o "$(BUILD_PATH)/$(BUILD_APP_NAME)"
