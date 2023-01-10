@@ -1,5 +1,5 @@
-
-/.idea
-/docs
-/bin
+.idea/
+docs/
+bin/
 go-swagger-merger
+.DS_Store
