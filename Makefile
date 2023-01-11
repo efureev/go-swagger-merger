@@ -39,3 +39,6 @@ clean: ## Make clean
 build: ## Build App
 	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -a -installsuffix cgo -ldflags="$(BUILDING_FLAGS)" \
   -o "$(BUILD_PATH)/$(BUILD_APP_NAME)"
+
+build-image: ## Build Docker Image
+	docker build .

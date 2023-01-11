@@ -19,7 +19,7 @@ go-swagger-merger -o ./docs/servers.yml ./docs/server1.yml ./docs/server2.yml
 Attention. The order of the files is essential, and the following file overwrites the same fields from the previous
 file.
 
-Sections:
+Sections that work exactly:
 
 - Servers - Exclude duplicate
 - Paths
