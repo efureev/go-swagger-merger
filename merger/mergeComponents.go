@@ -21,6 +21,15 @@ func mergeComponents(origin, items map[string]interface{}) map[string]interface{
 			origin[`responses`] = mergeComponentsResponses(originResponses, item.(map[string]interface{}))
 
 			continue
+		case `parameters`:
+			originParameters, ok := origin[`parameters`].(map[string]any)
+			if !ok {
+				originParameters = map[string]any{}
+			}
+
+			origin[`parameters`] = mergeComponentsParameters(originParameters, item.(map[string]interface{}))
+
+			continue
 		}
 
 		origin[key] = item
@@ -44,6 +53,16 @@ func mergeComponentsResponses(origin map[string]interface{}, responses map[strin
 		kStr := ToString(k)
 		if _, ok := origin[kStr]; !ok {
 			origin[kStr] = response
+		}
+	}
+
+	return origin
+}
+
+func mergeComponentsParameters(origin map[string]any, parameters map[string]any) map[string]any {
+	for k, parameter := range parameters {
+		if _, ok := origin[k]; !ok {
+			origin[k] = parameter
 		}
 	}
 

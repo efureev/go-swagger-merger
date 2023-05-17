@@ -26,7 +26,6 @@ func main() {
 	flag.StringVar(&outputFileName, "o", "swag.yaml", "")
 	flag.Var(&inputFileNames, "i", `Input file`)
 	flag.Parse()
-
 	for _, f := range inputFileNames {
 		err := merger.AddFile(f)
 		if err != nil {
