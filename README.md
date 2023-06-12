@@ -21,7 +21,7 @@ list `/data/swagger3.yaml`, `/data/swaggerN.yaml`.
 ```shell
 go-swagger-merger -o ./docs/swagger.yml -i ./docs/supply.yml -i ./docs/attributes.yml -i ./docs/entities.yml
 go-swagger-merger -o ./docs/swagger.yml -i ./docs/categories.yml -i ./docs/tags.yml -i ./docs/terms.yml
-go-swagger-merger -o ./docs/servers.yml -i ./docs/server1.yml -i ./docs/server2.yml
+go-swagger-merger -o ./docs/swagger.yml -i ./docs/tags.yml -i ./docs/categories.yml -i ./docs/logs.yml -i ./docs/terms.yml -i ./docs/articles.yml
 
 ```
 
