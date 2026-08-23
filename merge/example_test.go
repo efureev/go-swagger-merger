@@ -82,7 +82,11 @@ func ExampleMerger() {
 }
 
 // A conflict is an error by default, and the error identifies what disagreed.
-func ExampleErrConflict() {
+//
+// Named as a variant of Merge rather than ExampleErrConflict: an example
+// attached to a name inside a grouped var block is not rendered on
+// pkg.go.dev, so it would run as a test and document nothing.
+func ExampleMerge_conflict() {
 	a := []byte(`{openapi: 3.0.3, info: {title: A, version: "1"}, paths: {}, components: {schemas: {S: {type: integer}}}}`)
 	b := []byte(`{openapi: 3.0.3, info: {title: A, version: "1"}, paths: {}, components: {schemas: {S: {type: string}}}}`)
 
