@@ -86,7 +86,7 @@ Found by review before release, and fixed here:
 - `-o` defaults to stdout.
 - Docker image is `distroless/static` running as non-root, built for
   `linux/amd64` and `linux/arm64`.
-- Go 1.23 is the minimum.
+- Go 1.25 is the minimum.
 
 ### Removed
 
