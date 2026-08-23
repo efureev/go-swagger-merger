@@ -71,10 +71,15 @@ jobs:
       # A tag push is always the newest release, so it takes latest. A manual
       # run is a backfill of an older tag, so it must not drag latest
       # backwards unless that is explicitly asked for.
-      - name: Work out the image tags
-        id: tags
+      - name: Work out the image tags and commit
+        id: meta
         run: |
           {
+            # From the checkout, not from github.sha: a manual run starts on
+            # the default branch, so github.sha is that branch's head while
+            # the sources come from the tag, and the image would be stamped
+            # with a commit it was not built from.
+            echo "sha=$(git rev-parse HEAD)"
             echo "list<<TAGS"
             echo "ghcr.io/${{ github.repository }}:${VERSION}"
             if [ "${{ github.event_name }}" = push ] || [ "${{ inputs.latest }}" = true ]; then
@@ -89,7 +94,7 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.tags.outputs.list }}
+          tags: ${{ steps.meta.outputs.list }}
           build-args: |
             VERSION=${{ env.VERSION }}
-            COMMIT=${{ github.sha }}
+            COMMIT=${{ steps.meta.outputs.sha }}
