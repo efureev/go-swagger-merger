@@ -1,0 +1,9 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+servers:
+  - description: a server with no url
+  - url: https://ok.example.com
+tags:
+  - description: a tag with no name
+  - name: fine
+paths: {}

@@ -1,0 +1,60 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - gocritic
+    - gosec
+    - nilerr
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+    - copyloopvar
+    - forbidigo
+
+  settings:
+    forbidigo:
+      # The library must never take over the process. Only the CLI layer and
+      # main may panic or exit; everything else returns an error.
+      forbid:
+        - pattern: '^panic$'
+          msg: "the library must return an error instead of panicking"
+        - pattern: '^os\.Exit$'
+          msg: "only main may exit the process"
+      analyze-types: true
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+
+    gosec:
+      excludes:
+        # Reading a path the user named is the entire purpose of the tool.
+        - G304
+
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      # Tests exercise failure paths deliberately.
+      - path: _test\.go
+        linters:
+          - forbidigo
+          - gosec
+          - unparam
+      # The CLI layer owns process control.
+      - path: (internal/cli/|cmd/)
+        linters:
+          - forbidigo
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

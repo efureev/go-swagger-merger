@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+security:
+  - apiKey: []
+  - oauth: [read]
+paths: {}
+components:
+  securitySchemes:
+    apiKey: {type: apiKey, name: X-Key, in: header}
+    oauth:
+      type: oauth2
+      flows: {}

@@ -1,0 +1,6 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+paths: {}
+x-config:
+  retries: 3
+  nested: {a: 1}

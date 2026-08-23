@@ -1,0 +1,8 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+paths:
+  # Orders, added by the second file.
+  /orders:
+    get:
+      responses:
+        "200": {description: ok}

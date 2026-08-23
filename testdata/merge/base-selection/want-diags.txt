@@ -1,0 +1,5 @@
+warn: /info taken from the base document
+  at /info
+  in-2.yaml:2:7
+  in-1.yaml:2:7
+  [base-override]

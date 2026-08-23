@@ -1,0 +1,16 @@
+warn: expected servers to be a sequence, got a scalar; skipping
+  at /servers
+  in-1.yaml:3:10
+  [invalid-document]
+warn: expected tags to be a sequence, got a mapping; skipping
+  at /tags
+  in-1.yaml:4:7
+  [invalid-document]
+warn: server without a url in /servers cannot be identified; keeping it as-is
+  at /servers
+  in-2.yaml:4:5
+  [invalid-server]
+warn: tag without a name in /tags cannot be identified; keeping it as-is
+  at /tags
+  in-2.yaml:7:5
+  [invalid-tag]

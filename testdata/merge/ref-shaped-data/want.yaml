@@ -1,0 +1,27 @@
+openapi: 3.1.0
+info: {title: Meta, version: "1.0"}
+paths: {}
+components:
+  schemas:
+    # A schema documenting a $ref-shaped payload: this is data, not a reference.
+    Doc:
+      type: object
+      example:
+        $ref: "#/definitions/LegacyThing"
+        note: literal example data
+      default:
+        $ref: "#/definitions/AlsoLiteral"
+    # "properties" keys are author-chosen, so this declares a property named $ref.
+    JsonSchemaDoc:
+      type: object
+      properties:
+        $ref: {type: string}
+        $id: {type: string}
+    # A schema whose name happens to be a spec field is still a schema.
+    example:
+      type: object
+  examples:
+    Sample:
+      summary: A payload that mentions $ref
+      value:
+        $ref: "#/nowhere/at/all"

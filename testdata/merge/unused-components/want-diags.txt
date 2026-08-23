@@ -1,0 +1,4 @@
+warn: /components/schemas/Orphan is not referenced by any $ref
+  at /components/schemas/Orphan
+  in-1.yaml:15:13
+  [unused-component]

@@ -1,0 +1,8 @@
+# Golden files are compared byte for byte, so they must not gain CRLF on
+# Windows checkouts.
+*.go      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.json    text eol=lf
+*.txt     text eol=lf
+Makefile  text eol=lf

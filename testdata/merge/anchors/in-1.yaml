@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+x-defaults: &defaults
+  description: shared
+  type: object
+paths: {}
+components:
+  schemas:
+    User:
+      <<: *defaults
+      title: User
+    Order: *defaults
