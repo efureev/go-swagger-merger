@@ -10,6 +10,10 @@ on:
       tag:
         description: 'Tag to publish the image for, e.g. v2.0.0'
         required: true
+      latest:
+        description: 'Also move the latest tag onto this image'
+        type: boolean
+        default: false
 
 # The binaries and the image are separate deliverables, so they are separate
 # jobs: a registry permission problem must not stop the release from
@@ -64,15 +68,28 @@ jobs:
           # this repository linkage, so until it is linked the push is denied.
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A tag push is always the newest release, so it takes latest. A manual
+      # run is a backfill of an older tag, so it must not drag latest
+      # backwards unless that is explicitly asked for.
+      - name: Work out the image tags
+        id: tags
+        run: |
+          {
+            echo "list<<TAGS"
+            echo "ghcr.io/${{ github.repository }}:${VERSION}"
+            if [ "${{ github.event_name }}" = push ] || [ "${{ inputs.latest }}" = true ]; then
+              echo "ghcr.io/${{ github.repository }}:latest"
+            fi
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push the image
         uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: |
-            ghcr.io/${{ github.repository }}:${{ env.VERSION }}
-            ghcr.io/${{ github.repository }}:latest
+          tags: ${{ steps.tags.outputs.list }}
           build-args: |
             VERSION=${{ env.VERSION }}
             COMMIT=${{ github.sha }}
