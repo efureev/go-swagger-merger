@@ -219,7 +219,7 @@ The image is `distroless/static`, runs as a non-root user and is published for
 ## GitHub Actions
 
 ```yaml
-- uses: actions/setup-go@v5
+- uses: actions/setup-go@v7
   with: { go-version: stable }
 - run: go install github.com/efureev/go-swagger-merger/v2/cmd/swagger-merger@latest
 - run: swagger-merger validate --strict docs/*.yaml
