@@ -3,6 +3,13 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Lets the image be published for an existing tag without moving it, which
+  # would re-run GoReleaser against a release that already exists.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish the image for, e.g. v2.0.0'
+        required: true
 
 # The binaries and the image are separate deliverables, so they are separate
 # jobs: a registry permission problem must not stop the release from
@@ -10,6 +17,8 @@ on:
 jobs:
   binaries:
     name: binaries
+    # Only a tag push publishes binaries; a manual run is for the image alone.
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -34,8 +43,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+    env:
+      VERSION: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
@@ -45,11 +58,11 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          # The package predates this workflow: it was created by a personal
-          # access token and is not linked to the repository, so the built-in
-          # GITHUB_TOKEN cannot write to it. Prefer the PAT, and fall back to
-          # the built-in token for forks and for the day the package is linked.
-          password: ${{ secrets.TOKEN || secrets.GITHUB_TOKEN }}
+          # Requires the ghcr.io/efureev/go-swagger-merger package to be linked
+          # to this repository with write access for Actions. The package was
+          # created by the v1 workflow's personal access token and predates
+          # this repository linkage, so until it is linked the push is denied.
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push the image
         uses: docker/build-push-action@v7
@@ -58,8 +71,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:${{ env.VERSION }}
             ghcr.io/${{ github.repository }}:latest
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ env.VERSION }}
             COMMIT=${{ github.sha }}
