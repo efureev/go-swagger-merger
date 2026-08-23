@@ -7,7 +7,7 @@ VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo de
 COMMIT    ?= $(shell git rev-parse HEAD 2>/dev/null)
 DATE      ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
-LINT_VER   = v2.7.2
+LINT_VER   = v2.13.1
 
 .PHONY: help build install test race cover lint fmt tidy fuzz golden image clean
 .DEFAULT_GOAL := help

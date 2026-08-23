@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+# Windows runners default to PowerShell, which splits an argument like
+# -coverprofile=coverage.out and hands go test a bogus ".out" package. Using
+# bash everywhere keeps every step identical across the matrix.
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
