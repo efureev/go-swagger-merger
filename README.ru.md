@@ -74,6 +74,8 @@ cat base.yaml | swagger-merger merge - extra.yaml > out.yaml
 
 ## Библиотека
 
+Требуется Go 1.25 или новее.
+
 ```shell
 go get github.com/efureev/go-swagger-merger/v2
 ```
@@ -248,6 +250,10 @@ docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
 входные данные дают одни и те же байты в каждом прогоне.
 
 ## Разработка
+
+Требуется Go 1.25 или новее — именно эта версия зафиксирована в `go.mod`, в
+матрице CI и в builder-образе Dockerfile, поэтому ни одна сборка не подтянет
+молча другой toolchain.
 
 ```shell
 make test      # go test ./...

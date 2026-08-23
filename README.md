@@ -71,6 +71,8 @@ cat base.yaml | swagger-merger merge - extra.yaml > out.yaml
 
 ## Library
 
+Requires Go 1.25 or newer.
+
 ```shell
 go get github.com/efureev/go-swagger-merger/v2
 ```
@@ -228,6 +230,9 @@ The image is `distroless/static`, runs as a non-root user and is published for
 That last line works because the output is deterministic: same inputs, same bytes, every run.
 
 ## Development
+
+Requires Go 1.25 or newer; that is what `go.mod`, the CI matrix and the
+Dockerfile builder all pin, so no build silently pulls a different toolchain.
 
 ```shell
 make test      # go test ./...
