@@ -225,15 +225,39 @@ swagger-merger merge --on-conflict=error --on-conflict-section schemas=first ...
 
 ## Docker
 
+Опубликован в GHCR для `linux/amd64` и `linux/arm64`. Тяните `latest` либо
+фиксируйте версию:
+
 ```shell
 docker pull ghcr.io/efureev/go-swagger-merger:latest
-
-docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
-  merge -o /data/swagger.yml /data/users.yml /data/orders.yml
+docker pull ghcr.io/efureev/go-swagger-merger:v2.1.0
 ```
 
-Образ построен на `distroless/static`, работает от непривилегированного
-пользователя и публикуется для `linux/amd64` и `linux/arm64`.
+Рабочий каталог — `/data`, поэтому монтируйте спецификации туда, и пути
+останутся короткими:
+
+```shell
+# Слияние в файл
+docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
+  merge -o swagger.yml users.yml orders.yml
+
+# Либо в stdout, с входными данными только на чтение
+docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
+  merge users.yml orders.yml > swagger.yml
+
+# Проверка в CI без создания файлов
+docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
+  validate --strict users.yml orders.yml
+```
+
+Образ построен на `distroless/static` и работает от `nonroot` (uid 65532). На
+Linux bind-mount сохраняет владельца с хоста, поэтому для записи файла внутрь
+понадобится ваш uid — Docker Desktop на macOS и Windows подставляет его сам:
+
+```shell
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" \
+  ghcr.io/efureev/go-swagger-merger merge -o swagger.yml users.yml orders.yml
+```
 
 ## GitHub Actions
 

@@ -206,15 +206,39 @@ you already said what to do.
 
 ## Docker
 
+Published to GHCR for `linux/amd64` and `linux/arm64`. Pull `latest`, or pin a
+version:
+
 ```shell
 docker pull ghcr.io/efureev/go-swagger-merger:latest
-
-docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
-  merge -o /data/swagger.yml /data/users.yml /data/orders.yml
+docker pull ghcr.io/efureev/go-swagger-merger:v2.1.0
 ```
 
-The image is `distroless/static`, runs as a non-root user and is published for
-`linux/amd64` and `linux/arm64`.
+The working directory is `/data`, so mount your specs there and the paths stay
+short:
+
+```shell
+# Merge into a file
+docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
+  merge -o swagger.yml users.yml orders.yml
+
+# Or to stdout, with the input mounted read-only
+docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
+  merge users.yml orders.yml > swagger.yml
+
+# Check in CI without writing anything
+docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
+  validate --strict users.yml orders.yml
+```
+
+The image is `distroless/static` and runs as `nonroot` (uid 65532). On Linux a
+bind mount keeps the host's ownership, so writing a file into it needs your own
+uid — Docker Desktop on macOS and Windows maps this for you:
+
+```shell
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" \
+  ghcr.io/efureev/go-swagger-merger merge -o swagger.yml users.yml orders.yml
+```
 
 ## GitHub Actions
 
