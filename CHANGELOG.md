@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] — 2026-08-23
+
+Documentation and release plumbing only; the library and the CLI are byte for
+byte what 2.1.0 shipped.
+
+### Fixed
+
+- The conflict example ran as a test but appeared nowhere in the published
+  documentation: an example attached to a name inside a grouped `var` block is
+  not rendered on pkg.go.dev. It is now a variant of `Merge`.
+- Publishing the image for an older tag by hand moved `latest` onto it, and
+  stamped it with the commit of the branch the run started from rather than
+  the one it was built from.
+
+### Added
+
+- Status badges in both READMEs, and a Docker section describing what is
+  actually published: pinned tags, paths relative to the `/data` working
+  directory, and the `--user` override a Linux bind mount needs because the
+  image runs as `nonroot`.
+
 ## [2.1.0] — 2026-08-23
 
 No change to the library, the CLI or their behaviour. This release carries a
