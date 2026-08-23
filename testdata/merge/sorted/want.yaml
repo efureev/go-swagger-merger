@@ -1,0 +1,15 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+paths:
+  /apple:
+    get:
+      responses:
+        "200": {description: ok}
+  /zebra:
+    get:
+      responses:
+        "200": {description: ok}
+components:
+  schemas:
+    Alpha: {type: object}
+    Zulu: {type: object}

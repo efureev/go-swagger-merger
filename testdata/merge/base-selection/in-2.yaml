@@ -1,0 +1,3 @@
+openapi: 3.0.3
+info: {title: Chosen, version: "9.9", description: The base.}
+paths: {}

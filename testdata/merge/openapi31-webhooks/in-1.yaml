@@ -1,0 +1,8 @@
+openapi: 3.1.0
+info: {title: Hooks, version: "1.0"}
+paths: {}
+webhooks:
+  userCreated:
+    post:
+      responses:
+        "200": {description: ok}

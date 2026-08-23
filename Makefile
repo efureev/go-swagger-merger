@@ -1,44 +1,55 @@
 #!/usr/bin/make
-
 SHELL = /bin/sh
-DC_RUN_ARGS = --rm --user "$(shell id -u):$(shell id -g)"
 
-OS ?= linux # linux|darwin
-ARCH ?= amd64
-BUILD_PATH = bin
-BUILD_APP_NAME = go-swagger-merger
-BUILDING_FLAGS =
+BIN        = bin/swagger-merger
+PKG        = ./cmd/swagger-merger
+VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT    ?= $(shell git rev-parse HEAD 2>/dev/null)
+DATE      ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS    = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
+LINT_VER   = v2.7.2
 
-.PHONY : help fmt lint gotest test clean build
-.DEFAULT_GOAL : help
-.SILENT : lint gotest
+.PHONY: help build install test race cover lint fmt tidy fuzz golden image clean
+.DEFAULT_GOAL := help
 
 help: ## Show this help
 	@printf "\033[33m%s:\033[0m\n" 'Available commands'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[32m%-11s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[32m%-9s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-fmt: ## Run source code formatter tools
-	docker-compose run $(DC_RUN_ARGS) -e "GO111MODULE=off" --no-deps go sh -c 'go get golang.org/x/tools/cmd/goimports && $$GOPATH/bin/goimports -d -w .'
-	docker-compose run $(DC_RUN_ARGS) --no-deps go gofmt -s -w -d .
-	docker-compose run $(DC_RUN_ARGS) --no-deps go go mod tidy
+build: ## Build the binary into bin/
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o "$(BIN)" $(PKG)
 
-lint: ## Run go linters
-	docker-compose run --rm --no-deps golint golangci-lint run
+install: ## Install the binary into GOBIN
+	go install -trimpath -ldflags "$(LDFLAGS)" $(PKG)
 
-gotest: ## Run go tests
-	docker-compose run $(DC_RUN_ARGS) --no-deps go go test -v -race -timeout 5s ./...
+test: ## Run the tests
+	go test ./...
 
-test: lint gotest ## Run go tests and linters
+race: ## Run the tests under the race detector
+	go test -race -count=1 ./...
 
-shell: ## Start shell into container with golang
-	docker-compose run $(DC_RUN_ARGS) go bash
+cover: ## Run the tests and open the coverage report
+	go test -race -covermode=atomic -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out
 
-clean: ## Make clean
-	docker-compose down -v -t 1
+fuzz: ## Fuzz the merger for 60s
+	go test ./merge/ -run FuzzMerge -fuzz FuzzMerge -fuzztime 60s
 
-build: ## Build App
-	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build -a -installsuffix cgo -ldflags="$(BUILDING_FLAGS)" \
-  -o "$(BUILD_PATH)/$(BUILD_APP_NAME)"
+golden: ## Regenerate the golden fixtures
+	go test ./merge/ -run TestGolden -update
 
-build-image: ## Build Docker Image
-	docker build .
+lint: ## Run the linters
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(LINT_VER) run
+
+fmt: ## Format the source
+	gofmt -s -w .
+	go run golang.org/x/tools/cmd/goimports@latest -w .
+
+tidy: ## Tidy the module
+	go mod tidy
+
+image: ## Build the Docker image
+	docker build -t swagger-merger:$(VERSION) .
+
+clean: ## Remove build artefacts
+	rm -rf bin dist coverage.out

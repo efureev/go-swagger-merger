@@ -1,0 +1,3 @@
+warn: in-2.yaml is empty, skipping
+  in-2.yaml
+  [empty-document]

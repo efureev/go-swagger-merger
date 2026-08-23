@@ -1,0 +1,8 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0", x-count: 3}
+paths:
+  /x:
+    get:
+      deprecated: false
+      responses:
+        "200": {description: "a < b & c"}

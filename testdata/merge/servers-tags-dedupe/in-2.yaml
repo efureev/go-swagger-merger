@@ -1,0 +1,11 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+servers:
+  - url: https://api.example.com
+    description: production
+  - url: https://staging.example.com
+tags:
+  - name: users
+    description: User operations
+  - name: orders
+paths: {}

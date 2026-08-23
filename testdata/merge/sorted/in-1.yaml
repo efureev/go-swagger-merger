@@ -1,0 +1,11 @@
+paths:
+  /zebra:
+    get:
+      responses:
+        "200": {description: ok}
+components:
+  schemas:
+    Zulu: {type: object}
+    Alpha: {type: object}
+info: {title: API, version: "1.0"}
+openapi: 3.0.3

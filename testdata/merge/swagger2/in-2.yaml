@@ -1,0 +1,13 @@
+swagger: "2.0"
+info: {title: Legacy, version: "1.0"}
+schemes: [https, http]
+paths:
+  /users:
+    post:
+      responses:
+        "201": {description: created}
+definitions:
+  Order:
+    type: object
+securityDefinitions:
+  key: {type: apiKey, name: X-Key, in: header}

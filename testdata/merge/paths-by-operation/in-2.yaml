@@ -1,0 +1,13 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+paths:
+  /users:
+    post:
+      operationId: createUser
+      responses:
+        "201": {description: created}
+  /orders:
+    get:
+      operationId: listOrders
+      responses:
+        "200": {description: ok}

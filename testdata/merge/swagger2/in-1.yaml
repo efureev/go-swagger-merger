@@ -1,0 +1,13 @@
+swagger: "2.0"
+info: {title: Legacy, version: "1.0"}
+host: api.example.com
+schemes: [https]
+consumes: [application/json]
+paths:
+  /users:
+    get:
+      responses:
+        "200": {description: ok}
+definitions:
+  User:
+    type: object

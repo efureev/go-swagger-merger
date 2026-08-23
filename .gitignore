@@ -1,5 +1,13 @@
 .idea/
-docs/
-bin/
-go-swagger-merger
+.vscode/
 .DS_Store
+
+/bin/
+/dist/
+coverage.out
+
+# Binaries from a bare "go build" in the repository root. The leading slash
+# matters: without it the pattern also matches the cmd/swagger-merger source
+# directory, which git would then silently refuse to track.
+/swagger-merger
+/go-swagger-merger

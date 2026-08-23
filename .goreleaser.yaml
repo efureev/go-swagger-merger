@@ -1,0 +1,41 @@
+version: 2
+
+project_name: swagger-merger
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: swagger-merger
+    main: ./cmd/swagger-merger
+    binary: swagger-merger
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [README.md, README.ru.md, MIGRATION.md, MIGRATION.ru.md, LICENSE]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude: ['^docs:', '^test:', '^ci:', '^chore:']
+
+release:
+  draft: false
+  prerelease: auto

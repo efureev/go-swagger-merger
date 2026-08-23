@@ -1,0 +1,4 @@
+warn: "/users/{id}" and "/users/{userId}" are the same endpoint; parameter names do not distinguish paths
+  at /paths/~1users~1{userId}
+  in-2.yaml:5:5
+  [duplicate-path-template]

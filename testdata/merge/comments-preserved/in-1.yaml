@@ -1,0 +1,11 @@
+openapi: 3.0.3
+info: {title: API, version: "1.0"}
+paths:
+  # The user collection.
+  /users:
+    get: # read them all
+      description: |
+        A block scalar
+        across two lines.
+      responses:
+        "200": {description: ok}

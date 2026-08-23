@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [master, v2]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (go ${{ matrix.go }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ['1.23', 'stable']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          check-latest: true
+
+      - name: Verify go.mod is tidy
+        if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - run: go vet ./...
+      - run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.7.2
+
+  fuzz:
+    name: fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      # Short by design: the corpus in testdata carries the regressions, this
+      # only looks for something new on every push.
+      - run: go test ./merge/ -run FuzzMerge -fuzz FuzzMerge -fuzztime 60s
+
+  vuln:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  build:
+    name: build image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: swagger-merger:ci
+      - name: Smoke-test the image
+        run: |
+          set -euo pipefail
+          docker run --rm swagger-merger:ci version
+          docker run --rm -v "$PWD/testdata/merge/paths-by-operation:/data:ro" swagger-merger:ci \
+            merge /data/in-1.yaml /data/in-2.yaml | tee /tmp/out.yaml
+          grep -q 'get:'  /tmp/out.yaml
+          grep -q 'post:' /tmp/out.yaml

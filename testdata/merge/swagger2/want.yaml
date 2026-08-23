@@ -1,0 +1,23 @@
+swagger: "2.0"
+info: {title: Legacy, version: "1.0"}
+host: api.example.com
+schemes:
+  - https
+  - http
+consumes:
+  - application/json
+paths:
+  /users:
+    get:
+      responses:
+        "200": {description: ok}
+    post:
+      responses:
+        "201": {description: created}
+definitions:
+  User:
+    type: object
+  Order:
+    type: object
+securityDefinitions:
+  key: {type: apiKey, name: X-Key, in: header}

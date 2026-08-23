@@ -1,0 +1,2 @@
+parse: invalid document: in-2.yaml must be a mapping at the top level, got a scalar
+  in-2.yaml:1:1

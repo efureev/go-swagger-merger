@@ -1,0 +1,9 @@
+.git
+.github
+.idea
+bin
+dist
+*.md
+Makefile
+.golangci.yml
+.goreleaser.yaml

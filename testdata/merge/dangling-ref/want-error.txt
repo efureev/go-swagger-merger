@@ -1,0 +1,3 @@
+refs: unresolved $ref: $ref "#/components/schemas/Missing" does not resolve in the merged document
+  at /paths/~1x/get/responses/200/content/application~1json/schema
+  in-1.yaml:11:30
