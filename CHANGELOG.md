@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — 2026-08-23
+
+No change to the library, the CLI or their behaviour. This release carries a
+fix to the release workflow alone; a binary built from 2.0.0 and one built
+from 2.1.0 differ only in the version stamped into them.
+
+### Fixed
+
+- The container image could not be published. The GHCR package was created by
+  the v1 workflow's personal access token, which has since expired, and it is
+  not linked to this repository, so the built-in `GITHUB_TOKEN` is refused
+  with `permission_denied: read_package`. The dead token is gone from the
+  release path, which now depends on the repository linkage instead and so
+  carries no expiring secret. Publishing the image still requires that
+  linkage to be granted.
+
+### Added
+
+- The release workflow accepts a manual run with a tag, so the image can be
+  published for a tag that already exists without re-tagging and re-running
+  GoReleaser against a release that is already out.
+
 ## [2.0.0] — 2026-08-23
 
 A full rewrite. The module path is now
