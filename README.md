@@ -1,5 +1,10 @@
 # swagger-merger
 
+[![CI](https://github.com/efureev/go-swagger-merger/actions/workflows/ci.yml/badge.svg)](https://github.com/efureev/go-swagger-merger/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/efureev/go-swagger-merger/v2.svg)](https://pkg.go.dev/github.com/efureev/go-swagger-merger/v2)
+[![Release](https://img.shields.io/github/v/release/efureev/go-swagger-merger)](https://github.com/efureev/go-swagger-merger/releases/latest)
+[![License](https://img.shields.io/github/license/efureev/go-swagger-merger)](LICENSE)
+
 **English** · [Русский](README.ru.md)
 
 Merge several OpenAPI or Swagger documents into one — as a Go library, or from the command line.
