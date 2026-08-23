@@ -52,15 +52,33 @@ func writeOutput(path string, data []byte, stdout io.Writer) error {
 // have succeeded, and the destination is very often one of the inputs -- the
 // documented usage merges a file back over itself. A rename cannot leave a
 // half-written spec behind.
+//
+// Only a regular file can be replaced this way. Devices, FIFOs and sockets are
+// written through directly: /dev/null and /dev/stdout are ordinary output
+// targets, and rename would either fail or destroy them.
 func atomicWrite(path string, data []byte) error {
+	// A symlink is followed, so the link keeps pointing where it did.
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+
+	info, statErr := os.Stat(path)
+	if statErr == nil && !info.Mode().IsRegular() {
+		return writeInPlace(path, data)
+	}
+
 	dir := filepath.Dir(path)
 	mode := os.FileMode(0o644)
-	if info, err := os.Stat(path); err == nil {
+	if statErr == nil {
 		mode = info.Mode().Perm()
 	}
 
 	tmp, err := os.CreateTemp(dir, ".swagger-merger-*")
 	if err != nil {
+		// A read-only directory holding a writable file still has to work.
+		if writeErr := writeInPlace(path, data); writeErr == nil {
+			return nil
+		}
 		return fmt.Errorf("cannot create a temporary file in %s: %w", dir, err)
 	}
 	tmpName := tmp.Name()
@@ -92,6 +110,23 @@ func atomicWrite(path string, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+// writeInPlace is the fallback for destinations that cannot be renamed over.
+func writeInPlace(path string, data []byte) error {
+	// G302: a merged API document is a published artefact meant to be
+	// world-readable, and 0644 is what the atomic path writes too. The mode
+	// only applies when the file is created; for the device and FIFO targets
+	// this fallback exists for, it is ignored entirely.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644) //nolint:gosec // see above
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // outputCollidesWithInput reports whether the destination is also an input.

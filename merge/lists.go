@@ -65,11 +65,11 @@ func (c *mergeCtx) mergeRootSequence(
 	idx seqIndex, id identityFunc, code, what string,
 ) error {
 	if !yamlx.IsSequence(entry.Value) {
-		return c.skipUnexpectedKind(key, "a sequence", entry)
+		return c.skipUnexpectedSection(key, "a sequence", entry)
 	}
 	dst := c.ensureSequence(root, key, entry.KeyN)
 	if dst == nil {
-		return c.skipUnexpectedKind(key, "a sequence", entry)
+		return c.skipUnexpectedSection(key, "a sequence", entry)
 	}
 	return c.mergeSequence(section, "/"+yamlx.EscapeToken(key), dst, entry.Value, idx, id, code, what)
 }
@@ -109,58 +109,40 @@ func (c *mergeCtx) mergeSequence(
 
 		elemPtr := ptr + "/" + strconv.Itoa(prev.index)
 		incoming := c.loc(item)
-		switch c.m.opts.policyFor(section) {
-		case ConflictFirstWins:
-			c.m.recordConflict(
-				Conflict{Section: section, Pointer: elemPtr, Kept: prev.at, Dropped: incoming, Resolution: "first-wins"},
-				Diagnostic{
-					Code:    CodeConflict,
-					Message: fmt.Sprintf("%s at %s is defined differently in two inputs; keeping the first", what, elemPtr),
-					At:      prev.at,
-					Pointer: elemPtr,
-					Related: []Location{incoming},
-				})
-		case ConflictLastWins:
+		replace, err := c.applyPolicy(section, elemPtr, what, prev.at, incoming)
+		if err != nil {
+			return err
+		}
+		if replace {
 			dst.Content[prev.index] = yamlx.Clone(item)
 			idx[key] = seqEntry{index: prev.index, at: incoming}
-			c.m.recordConflict(
-				Conflict{Section: section, Pointer: elemPtr, Kept: incoming, Dropped: prev.at, Resolution: "last-wins"},
-				Diagnostic{
-					Code:    CodeConflict,
-					Message: fmt.Sprintf("%s at %s is defined differently in two inputs; keeping the last", what, elemPtr),
-					At:      incoming,
-					Pointer: elemPtr,
-					Related: []Location{prev.at},
-				})
-		default:
-			return newError("merge", ErrConflict, Diagnostic{
-				Code:    CodeConflict,
-				Message: fmt.Sprintf("%s at %s is defined differently in two inputs", what, elemPtr),
-				At:      incoming,
-				Pointer: elemPtr,
-				Related: []Location{prev.at},
-			})
 		}
 	}
 	return nil
 }
 
-// buildSeqIndex indexes an existing sequence, for the nested lists whose dedup
-// scope is one container rather than the whole document.
-func (c *mergeCtx) buildSeqIndex(dst *yaml.Node, id identityFunc) seqIndex {
-	idx := seqIndex{}
-	if dst == nil {
+// seqIndexFor returns the dedup index of a nested sequence, building it on
+// first use and keeping it for later documents.
+//
+// The location of an element already in place must not come from c.loc, which
+// names the file being merged right now: an element installed by an earlier
+// input would then be reported against the wrong file. locateInResult walks up
+// to the nearest recorded origin instead.
+func (c *mergeCtx) seqIndexFor(ptr string, dst *yaml.Node, id identityFunc) seqIndex {
+	if idx, ok := c.m.seqIndexes[ptr]; ok {
 		return idx
 	}
+	idx := seqIndex{}
 	for i, item := range dst.Content {
 		key, natural := id(item)
 		if !natural {
 			key, _ = canonicalIdentity(item)
 		}
 		if _, exists := idx[key]; !exists {
-			idx[key] = seqEntry{index: i, at: c.loc(item)}
+			idx[key] = seqEntry{index: i, at: c.m.locateInResult(ptr+"/"+strconv.Itoa(i), item)}
 		}
 	}
+	c.m.seqIndexes[ptr] = idx
 	return idx
 }
 
@@ -168,11 +150,11 @@ func (c *mergeCtx) buildSeqIndex(dst *yaml.Node, id identityFunc) seqIndex {
 // Order of first appearance is preserved.
 func mergeScalarSet(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntry) error {
 	if !yamlx.IsSequence(entry.Value) {
-		return c.skipUnexpectedKind(key, "a sequence", entry)
+		return c.skipUnexpectedSection(key, "a sequence", entry)
 	}
 	dst := c.ensureSequence(root, key, entry.KeyN)
 	if dst == nil {
-		return c.skipUnexpectedKind(key, "a sequence", entry)
+		return c.skipUnexpectedSection(key, "a sequence", entry)
 	}
 	seen := make(map[string]bool, len(dst.Content))
 	for _, item := range dst.Content {

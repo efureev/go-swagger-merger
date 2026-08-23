@@ -31,6 +31,27 @@ See [MIGRATION.md](MIGRATION.md).
   Writes are now atomic.
 - **`-h` printed `my string representation`** as the `-i` flag's default.
 
+Found by review before release, and fixed here:
+
+- Reference checking treated any mapping holding a `$ref` key as a reference,
+  so a schema whose `example` documented a `$ref`-shaped payload failed the
+  merge. Checking is now position-aware.
+- `--strict` promoted the unavoidable base-override notice, which made it fail
+  on every multi-document merge — including the invocations this README
+  recommends for CI.
+- A conflict in a path-level `parameters` or `servers` list attributed the
+  surviving element to whichever file was being merged at the time.
+- A conflict found while deep-merging an extension reported the surviving side
+  as unknown.
+- A zero-value `merge.Merger` panicked on a nil map.
+- Calling `Result` after a further `Add` re-reported the validation
+  diagnostics of the earlier documents.
+- A skipped empty input counted as a source, so a leading empty file consumed
+  the base slot and left the merge without a base document.
+- Writing to `/dev/null`, a FIFO or a symlink failed, or replaced the symlink;
+  these fall back to a direct write now.
+- `ReportUnusedComponents` was silently disabled by `SkipRefValidation`.
+
 ### Added
 
 - Library API under `merge/`: `Merge`, `New`/`Add`/`Result`, `Options`,

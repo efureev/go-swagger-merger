@@ -53,9 +53,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: v2.7.2
+      # Run through the Makefile rather than golangci-lint-action: the action's
+      # major version is coupled to golangci-lint's, and this keeps CI and the
+      # local `make lint` on one pinned version that cannot drift.
+      - run: make lint
 
   fuzz:
     name: fuzz smoke

@@ -46,6 +46,13 @@ type Merger struct {
 	tags     seqIndex
 	security seqIndex
 
+	// seqIndexes holds the dedup index of every nested sequence, keyed by its
+	// pointer. Keeping them across Add calls is what lets a conflict name the
+	// file an existing element actually came from; rebuilding the index from
+	// the destination each time would attribute it to whoever is being merged
+	// right now.
+	seqIndexes map[string]seqIndex
+
 	// pathTemplates maps a path with its parameter names erased to the first
 	// spelling seen, which is how equivalent-but-differently-named templates
 	// are detected.
@@ -55,13 +62,17 @@ type Merger struct {
 	// from, so a later conflict can name both sides.
 	origin map[string]Location
 
-	// baseOwned marks root keys claimed by the base document.
-	baseOwned map[string]bool
 	// baseWarned keeps the base-wins notice to one per key.
 	baseWarned map[string]bool
 
 	diags     []Diagnostic
 	conflicts []Conflict
+
+	// finalDiags holds the diagnostics produced by Result rather than by
+	// merging. They are discarded and recomputed on every Result so that
+	// Add/Result/Add/Result does not report the same problem twice.
+	finalDiags []Diagnostic
+	finalizing bool
 
 	// err is sticky: once a merge fails the Merger is poisoned, because the
 	// document is left half-merged.
@@ -82,16 +93,39 @@ type seqIndex map[string]seqEntry
 
 // New returns a Merger configured by opts.
 func New(opts Options) *Merger {
-	return &Merger{
-		opts:          opts,
-		root:          yamlx.NewMapping(),
-		servers:       seqIndex{},
-		tags:          seqIndex{},
-		security:      seqIndex{},
-		pathTemplates: map[string]string{},
-		origin:        map[string]Location{},
-		baseOwned:     map[string]bool{},
-		baseWarned:    map[string]bool{},
+	m := &Merger{opts: opts}
+	m.init()
+	return m
+}
+
+// init prepares the lazily-created state. It runs from New and again from
+// every entry point, so that a zero-value Merger works instead of panicking on
+// a nil map -- an exported type must not have an invalid zero value when the
+// package promises never to panic.
+func (m *Merger) init() {
+	if m.root == nil {
+		m.root = yamlx.NewMapping()
+	}
+	if m.servers == nil {
+		m.servers = seqIndex{}
+	}
+	if m.tags == nil {
+		m.tags = seqIndex{}
+	}
+	if m.security == nil {
+		m.security = seqIndex{}
+	}
+	if m.seqIndexes == nil {
+		m.seqIndexes = map[string]seqIndex{}
+	}
+	if m.pathTemplates == nil {
+		m.pathTemplates = map[string]string{}
+	}
+	if m.origin == nil {
+		m.origin = map[string]Location{}
+	}
+	if m.baseWarned == nil {
+		m.baseWarned = map[string]bool{}
 	}
 }
 
@@ -119,6 +153,7 @@ func (m *Merger) Add(ctx context.Context, src Source) error {
 	if m.err != nil {
 		return m.err
 	}
+	m.init()
 	m.result = nil
 	if err := m.add(ctx, src); err != nil {
 		m.err = err
@@ -140,7 +175,6 @@ func (m *Merger) add(ctx context.Context, src Source) error {
 			Message: fmt.Sprintf("%s is empty, skipping", label),
 			At:      Location{Source: label},
 		})
-		m.sources = append(m.sources, label)
 		return nil
 	}
 
@@ -248,6 +282,7 @@ func (m *Merger) Result() (*Result, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
+	m.init()
 	if m.result != nil {
 		return m.result, nil
 	}
@@ -272,22 +307,38 @@ func (m *Merger) Result() (*Result, error) {
 	}
 	m.stampVersion()
 
+	// Recomputed from scratch: Result may run again after another Add.
+	m.finalDiags = nil
+	m.finalizing = true
+	defer func() { m.finalizing = false }()
+
+	// One pass feeds both consumers, which are independently switchable.
+	scan := m.scanRefs()
 	if !m.opts.SkipRefValidation {
-		if err := m.validateRefs(); err != nil {
+		if err := m.validateRefs(scan.refs, scan.siblings); err != nil {
 			return nil, err
 		}
 	}
+	if m.opts.ReportUnusedComponents {
+		m.reportUnusedComponents(scan.refs)
+	}
+
 	if m.opts.SortKeys {
 		sortDocument(m.root, m.version.Family)
 	}
-	if err := m.enforceStrict(); err != nil {
+
+	diags := make([]Diagnostic, 0, len(m.diags)+len(m.finalDiags))
+	diags = append(diags, m.diags...)
+	diags = append(diags, m.finalDiags...)
+
+	if err := enforceStrict(m.opts.Strict, diags); err != nil {
 		return nil, err
 	}
 
 	m.result = &Result{
 		Document:    &Document{node: m.root, version: m.version},
 		Conflicts:   m.conflicts,
-		Diagnostics: m.diags,
+		Diagnostics: diags,
 		Sources:     m.sources,
 	}
 	return m.result, nil
@@ -308,15 +359,25 @@ func (m *Merger) stampVersion() {
 	m.root.Content = append([]*yaml.Node{kn, vn}, m.root.Content...)
 }
 
-// enforceStrict promotes warnings to errors. Conflict warnings are exempt:
-// they only exist because the caller explicitly asked for first/last-wins, so
-// promoting them would contradict that choice.
-func (m *Merger) enforceStrict() error {
-	if !m.opts.Strict {
+// strictExempt lists the warnings that --strict must not promote, because
+// neither is a defect the caller can act on.
+//
+// A conflict warning exists only because the caller asked for first/last-wins,
+// so promoting it would contradict that choice. A base-override warning is
+// unavoidable: every input carries its own info block, so promoting it would
+// make --strict fail on every ordinary multi-document merge.
+var strictExempt = map[string]bool{
+	CodeConflict:     true,
+	CodeBaseOverride: true,
+}
+
+// enforceStrict promotes warnings to errors.
+func enforceStrict(strict bool, diags []Diagnostic) error {
+	if !strict {
 		return nil
 	}
-	for _, d := range m.diags {
-		if d.Severity != SeverityWarning || d.Code == CodeConflict {
+	for _, d := range diags {
+		if d.Severity != SeverityWarning || strictExempt[d.Code] {
 			continue
 		}
 		return newError("strict", ErrStrict, d)
@@ -326,7 +387,11 @@ func (m *Merger) enforceStrict() error {
 
 func (m *Merger) warn(d Diagnostic) {
 	d.Severity = SeverityWarning
-	m.diags = append(m.diags, d)
+	if m.finalizing {
+		m.finalDiags = append(m.finalDiags, d)
+	} else {
+		m.diags = append(m.diags, d)
+	}
 	if m.opts.Reporter != nil {
 		m.opts.Reporter.Report(d)
 	}

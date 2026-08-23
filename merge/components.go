@@ -35,11 +35,11 @@ func componentSection(key string) Section {
 // mergeComponentsSection merges each components sub-map by definition name.
 func mergeComponentsSection(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntry) error {
 	if !yamlx.IsMapping(entry.Value) {
-		return c.skipUnexpectedKind(key, "a mapping", entry)
+		return c.skipUnexpectedSection(key, "a mapping", entry)
 	}
 	dst := c.ensureMapping(root, key, entry.KeyN)
 	if dst == nil {
-		return c.skipUnexpectedKind(key, "a mapping", entry)
+		return c.skipUnexpectedSection(key, "a mapping", entry)
 	}
 
 	base := "/" + yamlx.EscapeToken(key)

@@ -8,6 +8,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// keysOf lists a mapping's keys in document order, for order assertions.
+func keysOf(n *yaml.Node) []string {
+	entries := Entries(n)
+	keys := make([]string, len(entries))
+	for i, e := range entries {
+		keys[i] = e.Key
+	}
+	return keys
+}
+
 func parse(t *testing.T, src string) *yaml.Node {
 	t.Helper()
 	var n yaml.Node
@@ -17,13 +27,13 @@ func parse(t *testing.T, src string) *yaml.Node {
 	return Unwrap(&n)
 }
 
-func TestMapSetPreservesOrder(t *testing.T) {
+func TestMapSetNodePreservesOrder(t *testing.T) {
 	n := parse(t, "a: 1\nb: 2\nc: 3\n")
 
-	MapSet(n, "b", NewScalar("two")) // replace in place
-	MapSet(n, "d", NewScalar("4"))   // append
+	MapSetNode(n, NewScalar("b"), NewScalar("two")) // replace in place
+	MapSetNode(n, NewScalar("d"), NewScalar("4"))   // append
 
-	if got, want := strings.Join(MapKeys(n), ","), "a,b,c,d"; got != want {
+	if got, want := strings.Join(keysOf(n), ","), "a,b,c,d"; got != want {
 		t.Errorf("keys = %q, want %q", got, want)
 	}
 	if v, _ := MapString(n, "b"); v != "two" {
@@ -39,7 +49,7 @@ func TestMapDelete(t *testing.T) {
 	if MapDelete(n, "zz") {
 		t.Error("MapDelete reported a missing key as present")
 	}
-	if got, want := strings.Join(MapKeys(n), ","), "a,c"; got != want {
+	if got, want := strings.Join(keysOf(n), ","), "a,c"; got != want {
 		t.Errorf("keys = %q, want %q", got, want)
 	}
 }
@@ -49,7 +59,7 @@ func TestMapDeleteDoesNotAliasSibling(t *testing.T) {
 	n := parse(t, "a: 1\nb: 2\nc: 3\n")
 	clone := Clone(n)
 	MapDelete(n, "a")
-	if got, want := strings.Join(MapKeys(clone), ","), "a,b,c"; got != want {
+	if got, want := strings.Join(keysOf(clone), ","), "a,b,c"; got != want {
 		t.Errorf("clone keys = %q, want %q", got, want)
 	}
 }
@@ -97,7 +107,7 @@ func TestCloneIsIndependent(t *testing.T) {
 	cp := Clone(orig)
 
 	inner, _ := MapValue(cp, "a")
-	MapSet(inner, "b", NewScalar("mutated"))
+	MapSetNode(inner, NewScalar("b"), NewScalar("mutated"))
 
 	origInner, _ := MapValue(orig, "a")
 	v, _ := MapValue(origInner, "b")
@@ -173,10 +183,10 @@ copy: *base
 		t.Fatal("alias node survived expansion")
 	}
 	if v, _ := MapString(cp, "kind"); v != "thing" {
-		t.Errorf("expanded copy = %v, want kind=thing", MapKeys(cp))
+		t.Errorf("expanded copy = %v, want kind=thing", keysOf(cp))
 	}
 	// The expansion must be a copy, not a shared pointer.
-	MapSet(cp, "kind", NewScalar("mutated"))
+	MapSetNode(cp, NewScalar("kind"), NewScalar("mutated"))
 	base, _ := MapValue(doc, "base")
 	if v, _ := MapString(base, "kind"); v != "thing" {
 		t.Error("expanded alias still aliases the anchor target")
@@ -268,7 +278,7 @@ empty_seq: []
 func TestSortMapping(t *testing.T) {
 	n := parse(t, "c: 1\na: 2\nb: 3\n")
 	SortMapping(n, func(a, b string) bool { return a < b })
-	if got, want := strings.Join(MapKeys(n), ","), "a,b,c"; got != want {
+	if got, want := strings.Join(keysOf(n), ","), "a,b,c"; got != want {
 		t.Errorf("keys = %q, want %q", got, want)
 	}
 }

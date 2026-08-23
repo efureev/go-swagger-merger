@@ -412,3 +412,92 @@ func TestResolveFormat(t *testing.T) {
 		}
 	}
 }
+
+// Not every output target can be replaced by a rename. Devices and FIFOs are
+// ordinary destinations that the atomic path used to reject outright.
+func TestWriteToNonRegularFile(t *testing.T) {
+	dir := t.TempDir()
+	a := write(t, dir, "a.yaml", specA)
+
+	got := exec(t, "", "merge", "-q", "-o", os.DevNull, a)
+	if got.code != ExitOK {
+		t.Fatalf("code = %d, stderr:\n%s", got.code, got.stderr)
+	}
+}
+
+// A symlinked output must stay a symlink rather than be replaced by a file.
+func TestWriteThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	a := write(t, dir, "a.yaml", specA)
+	target := write(t, dir, "real.yaml", "# placeholder\n")
+	link := filepath.Join(dir, "link.yaml")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	if got := exec(t, "", "merge", "-q", "-o", link, a); got.code != ExitOK {
+		t.Fatalf("code = %d", got.code)
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("the symlink was replaced by a regular file")
+	}
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "/users") {
+		t.Errorf("the link target was not written:\n%s", data)
+	}
+}
+
+// The output/input notice is a coded diagnostic, so --log-format json must not
+// leave a bare text line in an otherwise machine-readable stream.
+func TestOutputIsInputRespectsLogFormat(t *testing.T) {
+	dir := t.TempDir()
+	a := write(t, dir, "a.yaml", specA)
+	b := write(t, dir, "b.yaml", specB)
+
+	got := exec(t, "", "merge", "--log-format=json", "-o", a, a, b)
+	if got.code != ExitOK {
+		t.Fatalf("code = %d, stderr:\n%s", got.code, got.stderr)
+	}
+	var found bool
+	for _, line := range strings.Split(strings.TrimSpace(got.stderr), "\n") {
+		if line == "" || strings.HasPrefix(line, "merged ") {
+			continue
+		}
+		if !strings.HasPrefix(line, "{") {
+			t.Errorf("non-JSON diagnostic line under --log-format=json: %q", line)
+			continue
+		}
+		var d map[string]any
+		if err := json.Unmarshal([]byte(line), &d); err != nil {
+			t.Fatalf("bad JSON: %v\n%s", err, line)
+		}
+		if d["code"] == "output-is-input" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the output-is-input warning was not emitted as JSON:\n%s", got.stderr)
+	}
+}
+
+// --strict must not fail a normal multi-document merge from the command line
+// either; the README documents exactly this invocation for CI.
+func TestStrictMergeOfOrdinaryDocuments(t *testing.T) {
+	dir := t.TempDir()
+	a := write(t, dir, "a.yaml", specA)
+	b := write(t, dir, "b.yaml", specB)
+
+	if got := exec(t, "", "merge", "--strict", "-q", "-o", filepath.Join(dir, "o.yaml"), a, b); got.code != ExitOK {
+		t.Fatalf("code = %d, stderr:\n%s", got.code, got.stderr)
+	}
+	if got := exec(t, "", "validate", "--strict", a, b); got.code != ExitOK {
+		t.Fatalf("validate --strict code = %d, stderr:\n%s", got.code, got.stderr)
+	}
+}

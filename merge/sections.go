@@ -61,17 +61,20 @@ var swagger2Sections = map[string]sectionFunc{
 	"securityDefinitions": mergeTopNamedMap(SectionComponents),
 }
 
-// ensureMapping returns the mapping stored at root[key], creating it when
-// absent. It returns nil when the key holds something that is not a mapping.
-func (c *mergeCtx) ensureMapping(root *yaml.Node, key string, keyNode *yaml.Node) *yaml.Node {
-	existing, ok := yamlx.MapValue(root, key)
-	if ok {
-		if yamlx.IsMapping(existing) {
+// ensure returns the container of the wanted kind stored at root[key],
+// creating it when absent. It returns nil when the key already holds something
+// of a different kind, which the caller reports rather than overwrites.
+func (c *mergeCtx) ensure(root *yaml.Node, key string, keyNode *yaml.Node, kind yaml.Kind) *yaml.Node {
+	if existing, ok := yamlx.MapValue(root, key); ok {
+		if existing != nil && existing.Kind == kind {
 			return existing
 		}
 		return nil
 	}
 	fresh := yamlx.NewMapping()
+	if kind == yaml.SequenceNode {
+		fresh = yamlx.NewSequence()
+	}
 	kn := yamlx.Clone(keyNode)
 	if kn == nil {
 		kn = yamlx.NewScalar(key)
@@ -80,22 +83,12 @@ func (c *mergeCtx) ensureMapping(root *yaml.Node, key string, keyNode *yaml.Node
 	return fresh
 }
 
-// ensureSequence is ensureMapping for sequences.
+func (c *mergeCtx) ensureMapping(root *yaml.Node, key string, keyNode *yaml.Node) *yaml.Node {
+	return c.ensure(root, key, keyNode, yaml.MappingNode)
+}
+
 func (c *mergeCtx) ensureSequence(root *yaml.Node, key string, keyNode *yaml.Node) *yaml.Node {
-	existing, ok := yamlx.MapValue(root, key)
-	if ok {
-		if yamlx.IsSequence(existing) {
-			return existing
-		}
-		return nil
-	}
-	fresh := yamlx.NewSequence()
-	kn := yamlx.Clone(keyNode)
-	if kn == nil {
-		kn = yamlx.NewScalar(key)
-	}
-	yamlx.MapSetNode(root, kn, fresh)
-	return fresh
+	return c.ensure(root, key, keyNode, yaml.SequenceNode)
 }
 
 // put installs entry into dst, resolving a clash through the section policy.
@@ -127,9 +120,17 @@ func (c *mergeCtx) install(dst *yaml.Node, ptr string, entry yamlx.MapEntry) {
 	c.m.origin[ptr] = c.loc(entry.Value)
 }
 
-func (c *mergeCtx) resolveConflict(section Section, ptr string, dst *yaml.Node, entry yamlx.MapEntry) error {
-	kept := c.m.origin[ptr]
-	incoming := c.loc(entry.Value)
+// applyPolicy records a clash and reports whether the incoming value should
+// replace the one already in place. Mappings and sequences share it so that a
+// change to how conflicts are reported cannot drift between the two.
+//
+// what names the kind of thing for the message; the empty string means the
+// pointer speaks for itself.
+func (c *mergeCtx) applyPolicy(section Section, ptr, what string, kept, incoming Location) (bool, error) {
+	subject := ptr
+	if what != "" {
+		subject = what + " at " + ptr
+	}
 
 	switch c.m.opts.policyFor(section) {
 	case ConflictFirstWins:
@@ -137,35 +138,61 @@ func (c *mergeCtx) resolveConflict(section Section, ptr string, dst *yaml.Node, 
 			Conflict{Section: section, Pointer: ptr, Kept: kept, Dropped: incoming, Resolution: "first-wins"},
 			Diagnostic{
 				Code:    CodeConflict,
-				Message: fmt.Sprintf("%s is defined differently in two inputs; keeping the first", ptr),
+				Message: fmt.Sprintf("%s is defined differently in two inputs; keeping the first", subject),
 				At:      kept,
 				Pointer: ptr,
 				Related: []Location{incoming},
 			})
-		return nil
+		return false, nil
 
 	case ConflictLastWins:
-		c.install(dst, ptr, entry)
 		c.m.recordConflict(
 			Conflict{Section: section, Pointer: ptr, Kept: incoming, Dropped: kept, Resolution: "last-wins"},
 			Diagnostic{
 				Code:    CodeConflict,
-				Message: fmt.Sprintf("%s is defined differently in two inputs; keeping the last", ptr),
+				Message: fmt.Sprintf("%s is defined differently in two inputs; keeping the last", subject),
 				At:      incoming,
 				Pointer: ptr,
 				Related: []Location{kept},
 			})
-		return nil
+		return true, nil
 
 	default:
-		return newError("merge", ErrConflict, Diagnostic{
+		return false, newError("merge", ErrConflict, Diagnostic{
 			Code:    CodeConflict,
-			Message: fmt.Sprintf("%s is defined differently in two inputs", ptr),
+			Message: fmt.Sprintf("%s is defined differently in two inputs", subject),
 			At:      incoming,
 			Pointer: ptr,
 			Related: []Location{kept},
 		})
 	}
+}
+
+func (c *mergeCtx) resolveConflict(section Section, ptr string, dst *yaml.Node, entry yamlx.MapEntry) error {
+	replace, err := c.applyPolicy(section, ptr, "", c.keptLocation(ptr, dst, entry.Key), c.loc(entry.Value))
+	if err != nil {
+		return err
+	}
+	if replace {
+		c.install(dst, ptr, entry)
+	}
+	return nil
+}
+
+// keptLocation is where the definition currently at ptr came from.
+//
+// A deep merge descends through pointers that were never installed in their
+// own right, so origin can be missing; falling back to the node itself keeps
+// the diagnostic from reporting the surviving side as unknown.
+func (c *mergeCtx) keptLocation(ptr string, dst *yaml.Node, key string) Location {
+	if origin, ok := c.m.origin[ptr]; ok {
+		return origin
+	}
+	existing, ok := yamlx.MapValue(dst, key)
+	if !ok {
+		return Location{}
+	}
+	return c.m.locateInResult(ptr, existing)
 }
 
 // mergeBaseWins handles single-valued sections such as info: the base document
@@ -180,7 +207,6 @@ func mergeBaseWins(section Section) sectionFunc {
 		existing, ok := yamlx.MapValue(root, key)
 		if !ok {
 			c.install(root, ptr, entry)
-			c.m.baseOwned[key] = c.isBase
 			return nil
 		}
 		if yamlx.Equal(existing, entry.Value) {
@@ -189,7 +215,6 @@ func mergeBaseWins(section Section) sectionFunc {
 		if c.isBase {
 			previous := c.m.origin[ptr]
 			c.install(root, ptr, entry)
-			c.m.baseOwned[key] = true
 			c.warnBaseOnce(ptr, Diagnostic{
 				Code:    CodeBaseOverride,
 				Message: fmt.Sprintf("%s taken from the base document", ptr),
@@ -215,11 +240,11 @@ func mergeBaseWins(section Section) sectionFunc {
 func mergeTopNamedMap(section Section) sectionFunc {
 	return func(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntry) error {
 		if !yamlx.IsMapping(entry.Value) {
-			return c.skipUnexpectedKind(key, "a mapping", entry)
+			return c.skipUnexpectedSection(key, "a mapping", entry)
 		}
 		dst := c.ensureMapping(root, key, entry.KeyN)
 		if dst == nil {
-			return c.skipUnexpectedKind(key, "a mapping", entry)
+			return c.skipUnexpectedSection(key, "a mapping", entry)
 		}
 		ptr := "/" + yamlx.EscapeToken(key)
 		for _, e := range yamlx.Entries(entry.Value) {
@@ -284,12 +309,19 @@ func (c *mergeCtx) warnBaseOnce(ptr string, d Diagnostic) {
 	c.m.warn(d)
 }
 
-func (c *mergeCtx) skipUnexpectedKind(key, want string, entry yamlx.MapEntry) error {
+// skipUnexpectedKind reports a container this merger cannot combine, naming
+// the pointer it actually sits at and the node that is the wrong shape.
+func (c *mergeCtx) skipUnexpectedKind(ptr, name, want string, got *yaml.Node) error {
 	c.m.warn(Diagnostic{
 		Code:    CodeInvalidDocumentCode,
-		Message: fmt.Sprintf("expected %s to be %s, got %s; skipping", key, want, kindName(entry.Value)),
-		At:      c.loc(entry.Value),
-		Pointer: "/" + yamlx.EscapeToken(key),
+		Message: fmt.Sprintf("expected %s to be %s, got %s; skipping", name, want, kindName(got)),
+		At:      c.loc(got),
+		Pointer: ptr,
 	})
 	return nil
+}
+
+// skipUnexpectedSection is skipUnexpectedKind for a root-level section.
+func (c *mergeCtx) skipUnexpectedSection(key, want string, entry yamlx.MapEntry) error {
+	return c.skipUnexpectedKind("/"+yamlx.EscapeToken(key), key, want, entry.Value)
 }

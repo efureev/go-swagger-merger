@@ -156,8 +156,12 @@ func runMerge(ctx context.Context, args []string, stdio IO) int {
 	}
 
 	if clash, ok := outputCollidesWithInput(cfg.output, inputs); ok && !cfg.quiet {
-		fmt.Fprintf(stdio.Err, "warn: the output %s is also an input (%s); it is replaced atomically\n",
-			cfg.output, clash)
+		reporter{w: stdio.Err, json: cfg.logFormat == "json"}.Report(merge.Diagnostic{
+			Severity: merge.SeverityWarning,
+			Code:     merge.CodeOutputIsInput,
+			Message: fmt.Sprintf("the output %s is also an input (%s); it is replaced atomically",
+				cfg.output, clash),
+		})
 	}
 
 	if err := writeOutput(cfg.output, data, stdio.Out); err != nil {

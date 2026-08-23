@@ -19,11 +19,11 @@ import (
 func mergePathsSection(section Section) sectionFunc {
 	return func(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntry) error {
 		if !yamlx.IsMapping(entry.Value) {
-			return c.skipUnexpectedKind(key, "a mapping", entry)
+			return c.skipUnexpectedSection(key, "a mapping", entry)
 		}
 		dst := c.ensureMapping(root, key, entry.KeyN)
 		if dst == nil {
-			return c.skipUnexpectedKind(key, "a mapping", entry)
+			return c.skipUnexpectedSection(key, "a mapping", entry)
 		}
 
 		base := "/" + yamlx.EscapeToken(key)
@@ -93,9 +93,11 @@ func (c *mergeCtx) mergeNestedSequence(
 
 	target := c.ensureSequence(dst, entry.Key, entry.KeyN)
 	if target == nil {
-		return c.skipUnexpectedKind(entry.Key, "a sequence", entry)
+		// The destination, not the incoming value, is the wrong shape here.
+		existing, _ := yamlx.MapValue(dst, entry.Key)
+		return c.skipUnexpectedKind(ptr, entry.Key, "a sequence", existing)
 	}
-	idx := c.buildSeqIndex(target, id)
+	idx := c.seqIndexFor(ptr, target, id)
 	return c.mergeSequence(section, ptr, target, entry.Value, idx, id, code, what)
 }
 

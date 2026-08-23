@@ -45,27 +45,131 @@ func classifyRef(target string) RefKind {
 	}
 }
 
-// collectRefs walks the merged document and gathers every $ref, attributing
-// each to the input file it came from.
-func (m *Merger) collectRefs() []Ref {
-	var refs []Ref
+// refOpaqueFields hold arbitrary user data rather than OpenAPI objects. A
+// "$ref" key inside one of them is a literal string in a payload sample, not a
+// reference, so the walk must not descend into them: a schema whose example
+// happens to document a $ref-shaped body is perfectly valid and must not fail
+// the merge.
+var refOpaqueFields = map[string]bool{
+	"example": true,
+	"default": true,
+	"enum":    true,
+	"const":   true,
+}
+
+// nameMapFields are the objects whose keys are chosen by the spec author. The
+// member below such a key is a definition, so its name must never be read as a
+// spec field -- a schema called "example" is not an example, and a property
+// called "$ref" is not a reference.
+var nameMapFields = map[string]bool{
+	"schemas": true, "responses": true, "parameters": true, "examples": true,
+	"requestBodies": true, "headers": true, "securitySchemes": true,
+	"links": true, "callbacks": true, "pathItems": true,
+	"definitions": true, "securityDefinitions": true,
+	"properties": true, "patternProperties": true,
+	"paths": true, "webhooks": true, "content": true, "encoding": true,
+	"variables": true, "mapping": true, "scopes": true,
+}
+
+func pointerTokens(pointer string) []string {
+	if pointer == "" {
+		return nil
+	}
+	raw := strings.Split(strings.TrimPrefix(pointer, "/"), "/")
+	out := make([]string, len(raw))
+	for i, t := range raw {
+		out[i] = yamlx.UnescapeToken(t)
+	}
+	return out
+}
+
+// opaqueForRefs reports whether a subtree holds data rather than spec objects.
+func opaqueForRefs(pointer string) bool {
+	tokens := pointerTokens(pointer)
+	n := len(tokens)
+	if n == 0 {
+		return false
+	}
+	// Directly under a name map this token is an author-chosen name.
+	if n >= 2 && nameMapFields[tokens[n-2]] {
+		return false
+	}
+	if refOpaqueFields[tokens[n-1]] {
+		return true
+	}
+	// An Example Object may itself be a $ref, but its "value" is the payload.
+	return tokens[n-1] == "value" && n >= 3 && tokens[n-3] == "examples"
+}
+
+// referenceTarget reports the $ref value node when n is a Reference Object.
+//
+// Requiring a scalar $ref and refusing to read a name map as one keeps
+// author-chosen keys out of the reference space.
+func referenceTarget(pointer string, n *yaml.Node) (*yaml.Node, bool) {
+	if !yamlx.IsMapping(n) {
+		return nil, false
+	}
+	_, val, ok := yamlx.MapGet(n, "$ref")
+	if !ok || !yamlx.IsScalar(val) {
+		return nil, false
+	}
+	if tokens := pointerTokens(pointer); len(tokens) > 0 && nameMapFields[tokens[len(tokens)-1]] {
+		return nil, false
+	}
+	return val, true
+}
+
+// refScan is the outcome of the single pass over the merged document.
+type refScan struct {
+	refs     []Ref
+	siblings []Diagnostic
+}
+
+// scanRefs walks the merged document once, gathering references and the keys
+// placed beside them. One walk serves both the dangling-reference check and
+// the unused-component report, which are independently switchable.
+func (m *Merger) scanRefs() refScan {
+	allowedSiblings := map[string]bool{"$ref": true}
+	if m.version.Family == FamilyOpenAPI3 && m.version.Minor >= 1 {
+		allowedSiblings["summary"] = true
+		allowedSiblings["description"] = true
+	}
+
+	var scan refScan
 	_ = yamlx.Walk(m.root, func(pointer string, n *yaml.Node) error {
-		if !yamlx.IsMapping(n) {
+		if opaqueForRefs(pointer) {
+			return yamlx.SkipSubtree
+		}
+		val, ok := referenceTarget(pointer, n)
+		if !ok {
 			return nil
 		}
-		_, val, ok := yamlx.MapGet(n, "$ref")
-		if !ok || !yamlx.IsScalar(val) {
-			return nil
-		}
-		refs = append(refs, Ref{
+
+		// The reference itself is the actionable location, not its container.
+		scan.refs = append(scan.refs, Ref{
 			Pointer: pointer,
 			Target:  val.Value,
 			Kind:    classifyRef(val.Value),
 			At:      m.locateInResult(pointer, val),
 		})
+
+		var extra []string
+		for _, e := range yamlx.Entries(n) {
+			if !allowedSiblings[e.Key] {
+				extra = append(extra, e.Key)
+			}
+		}
+		if len(extra) > 0 {
+			scan.siblings = append(scan.siblings, Diagnostic{
+				Code:    CodeRefSiblings,
+				Message: fmt.Sprintf("keys next to $ref are ignored by this spec version: %s", strings.Join(extra, ", ")),
+				At:      m.locateInResult(pointer, n),
+				Pointer: pointer,
+			})
+		}
 		return nil
 	})
-	return refs
+	return scan
 }
 
 // locateInResult recovers the input file for a node in the merged tree.
@@ -74,10 +178,16 @@ func (m *Merger) collectRefs() []Ref {
 // filename comes from the nearest enclosing pointer that was recorded when the
 // definition was installed.
 func (m *Merger) locateInResult(pointer string, n *yaml.Node) Location {
-	loc := Location{Line: n.Line, Column: n.Column}
+	loc := Location{}
+	if n != nil {
+		loc.Line, loc.Column = n.Line, n.Column
+	}
 	for p := pointer; ; {
 		if origin, ok := m.origin[p]; ok {
 			loc.Source = origin.Source
+			if loc.Line == 0 {
+				loc.Line, loc.Column = origin.Line, origin.Column
+			}
 			return loc
 		}
 		cut := strings.LastIndexByte(p, '/')
@@ -91,9 +201,7 @@ func (m *Merger) locateInResult(pointer string, n *yaml.Node) Location {
 // validateRefs checks that every local $ref resolves inside the merged
 // document. Merging is exactly where a reference goes stale: a file that was
 // self-consistent on its own can lose its target to a conflict policy.
-func (m *Merger) validateRefs() error {
-	refs := m.collectRefs()
-
+func (m *Merger) validateRefs(refs []Ref, siblings []Diagnostic) error {
 	for _, ref := range refs {
 		switch ref.Kind {
 		case RefLocal:
@@ -114,10 +222,8 @@ func (m *Merger) validateRefs() error {
 			})
 		}
 	}
-
-	m.checkRefSiblings()
-	if m.opts.ReportUnusedComponents {
-		m.reportUnusedComponents(refs)
+	for _, d := range siblings {
+		m.warn(d)
 	}
 	return nil
 }
@@ -138,60 +244,22 @@ func (m *Merger) resolvesLocally(target string) bool {
 	return ok
 }
 
-// checkRefSiblings reports keys placed next to a $ref. OpenAPI 3.0 ignores
-// them outright; 3.1 honours only summary and description.
-func (m *Merger) checkRefSiblings() {
-	allowed := map[string]bool{"$ref": true}
-	if m.version.Family == FamilyOpenAPI3 && m.version.Minor >= 1 {
-		allowed["summary"] = true
-		allowed["description"] = true
-	}
-
-	_ = yamlx.Walk(m.root, func(pointer string, n *yaml.Node) error {
-		if !yamlx.IsMapping(n) {
-			return nil
-		}
-		if _, _, ok := yamlx.MapGet(n, "$ref"); !ok {
-			return nil
-		}
-		var extra []string
-		for _, e := range yamlx.Entries(n) {
-			if !allowed[e.Key] {
-				extra = append(extra, e.Key)
-			}
-		}
-		if len(extra) == 0 {
-			return nil
-		}
-		m.warn(Diagnostic{
-			Code:    CodeRefSiblings,
-			Message: fmt.Sprintf("keys next to $ref are ignored by this spec version: %s", strings.Join(extra, ", ")),
-			At:      m.locateInResult(pointer, n),
-			Pointer: pointer,
-		})
-		return nil
-	})
-}
-
 // componentContainers lists the pointers whose members are addressable
 // definitions, per spec family.
 func (m *Merger) componentContainers() []string {
 	if m.version.Family == FamilySwagger2 {
 		return []string{"/definitions", "/parameters", "/responses", "/securityDefinitions"}
 	}
-	out := make([]string, 0, len(componentSections))
-	for _, e := range yamlx.Entries(mustMapping(m.root, "components")) {
+	components, ok := yamlx.MapValue(m.root, "components")
+	if !ok || !yamlx.IsMapping(components) {
+		return nil
+	}
+	entries := yamlx.Entries(components)
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
 		out = append(out, "/components/"+yamlx.EscapeToken(e.Key))
 	}
 	return out
-}
-
-func mustMapping(root *yaml.Node, key string) *yaml.Node {
-	v, ok := yamlx.MapValue(root, key)
-	if !ok || !yamlx.IsMapping(v) {
-		return nil
-	}
-	return v
 }
 
 // reportUnusedComponents notes definitions nothing references. Merging tends

@@ -124,14 +124,9 @@ func MapString(n *yaml.Node, key string) (string, bool) {
 	return v.Value, true
 }
 
-// MapSet assigns key to val, replacing an existing entry in place (preserving
-// its position and key comments) or appending a new one at the end.
-func MapSet(n *yaml.Node, key string, val *yaml.Node) {
-	MapSetNode(n, NewScalar(key), val)
-}
-
-// MapSetNode is MapSet with an explicit key node, used when the key's comments
-// should travel with it.
+// MapSetNode assigns key to val, replacing an existing entry in place
+// (preserving its position and the key node's comments) or appending a new one
+// at the end.
 func MapSetNode(n *yaml.Node, keyNode, val *yaml.Node) {
 	if !IsMapping(n) {
 		return
@@ -160,20 +155,6 @@ func MapDelete(n *yaml.Node, key string) bool {
 		}
 	}
 	return false
-}
-
-// MapKeys lists the mapping's keys in document order.
-func MapKeys(n *yaml.Node) []string {
-	if !IsMapping(n) {
-		return nil
-	}
-	keys := make([]string, 0, len(n.Content)/2)
-	for i := 0; i < len(n.Content); i += 2 {
-		if k, ok := scalarKey(n.Content[i]); ok {
-			keys = append(keys, k)
-		}
-	}
-	return keys
 }
 
 // MapEntry is one key/value pair of a mapping, in document order.

@@ -1,6 +1,7 @@
 package yamlx
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -17,19 +18,6 @@ func EscapeToken(s string) string {
 func UnescapeToken(s string) string {
 	s = strings.ReplaceAll(s, "~1", "/")
 	return strings.ReplaceAll(s, "~0", "~")
-}
-
-// Pointer joins tokens into an RFC 6901 JSON pointer.
-func Pointer(tokens ...string) string {
-	if len(tokens) == 0 {
-		return ""
-	}
-	var sb strings.Builder
-	for _, t := range tokens {
-		sb.WriteByte('/')
-		sb.WriteString(EscapeToken(t))
-	}
-	return sb.String()
 }
 
 // At resolves an RFC 6901 pointer against root. The empty pointer selects the
@@ -68,18 +56,36 @@ func At(root *yaml.Node, pointer string) (*yaml.Node, bool) {
 	return cur, cur != nil
 }
 
+// SkipSubtree tells Walk not to descend into the node just visited. Returning
+// it from the callback is not an error.
+//
+// The name deliberately omits the Err prefix, matching fs.SkipDir and
+// fs.SkipAll: this is a control-flow signal, and calling it ErrSkipSubtree
+// would suggest something went wrong.
+//
+//nolint:staticcheck,revive // ST1012: see above
+var SkipSubtree = errors.New("skip this subtree")
+
 // Walk visits every node in the tree, passing the RFC 6901 pointer that
-// locates it. Returning an error from fn aborts the walk. Alias nodes are
+// locates it. Returning an error from fn aborts the walk; returning
+// [SkipSubtree] prunes the node's children and continues. Alias nodes are
 // visited but not followed, so a cyclic document terminates.
 func Walk(root *yaml.Node, fn func(pointer string, n *yaml.Node) error) error {
-	return walk(Unwrap(root), "", fn)
+	err := walk(Unwrap(root), "", fn)
+	if errors.Is(err, SkipSubtree) {
+		return nil
+	}
+	return err
 }
 
 func walk(n *yaml.Node, pointer string, fn func(string, *yaml.Node) error) error {
 	if n == nil {
 		return nil
 	}
-	if err := fn(pointer, n); err != nil {
+	switch err := fn(pointer, n); {
+	case errors.Is(err, SkipSubtree):
+		return nil
+	case err != nil:
 		return err
 	}
 	switch n.Kind {

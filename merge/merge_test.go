@@ -473,3 +473,289 @@ components:
 		t.Fatalf("a percent-encoded fragment should resolve: %v", err)
 	}
 }
+
+// ── Regressions from the post-rewrite review ────────────────────────────────
+
+// A $ref inside an example is payload data, not a reference. Validating it
+// failed perfectly valid documents.
+func TestRefInsideDataFieldsIsNotAReference(t *testing.T) {
+	for _, field := range []string{"example", "default", "const"} {
+		t.Run(field, func(t *testing.T) {
+			doc := `
+openapi: 3.1.0
+info: {title: Lit, version: "1.0"}
+paths: {}
+components:
+  schemas:
+    Doc:
+      type: object
+      ` + field + `:
+        $ref: "#/definitions/LegacyThing"
+        note: literal payload
+`
+			if _, err := mergeStringsErr(merge.Options{}, doc); err != nil {
+				t.Fatalf("a $ref inside %s must not be validated: %v", field, err)
+			}
+		})
+	}
+}
+
+func TestRefInsideEnumAndExampleValueIsNotAReference(t *testing.T) {
+	const doc = `
+openapi: 3.0.3
+info: {title: Lit, version: "1.0"}
+paths: {}
+components:
+  schemas:
+    Doc:
+      enum:
+        - {$ref: "#/nope/one"}
+  examples:
+    Sample:
+      value:
+        $ref: "#/nope/two"
+`
+	if _, err := mergeStringsErr(merge.Options{}, doc); err != nil {
+		t.Fatalf("enum values and example payloads must not be validated: %v", err)
+	}
+}
+
+// A schema named "example" is a definition, not an example, so its contents
+// must still be validated.
+func TestComponentNamedExampleIsStillValidated(t *testing.T) {
+	const doc = `
+openapi: 3.0.3
+info: {title: Lit, version: "1.0"}
+paths: {}
+components:
+  schemas:
+    example:
+      properties:
+        broken: {$ref: "#/components/schemas/Absent"}
+`
+	if _, err := mergeStringsErr(merge.Options{}, doc); !errors.Is(err, merge.ErrDanglingRef) {
+		t.Fatalf("want ErrDanglingRef inside a schema called \"example\", got %v", err)
+	}
+}
+
+// "properties" keys are author-chosen, so a property called $ref is a property.
+func TestPropertyNamedRefIsNotAReference(t *testing.T) {
+	const doc = `
+openapi: 3.0.3
+info: {title: Meta, version: "1.0"}
+paths: {}
+components:
+  schemas:
+    JsonSchemaDoc:
+      type: object
+      properties:
+        $ref: {type: string}
+        $id: {type: string}
+`
+	res, err := mergeStringsErr(merge.Options{}, doc)
+	if err != nil {
+		t.Fatalf("a property named $ref must not be read as a reference: %v", err)
+	}
+	for _, d := range res.Warnings() {
+		if d.Code == merge.CodeRefSiblings {
+			t.Errorf("unexpected ref-sibling warning: %s", d)
+		}
+	}
+}
+
+// Every input carries its own info block, so the base-override notice is
+// unavoidable and must not make --strict fail on an ordinary merge.
+func TestStrictIgnoresBaseOverride(t *testing.T) {
+	const one = `
+openapi: 3.0.3
+info: {title: One, version: "1.0"}
+paths: {/a: {get: {responses: {"200": {description: ok}}}}}
+`
+	const two = `
+openapi: 3.0.3
+info: {title: Two, version: "2.0"}
+paths: {/b: {get: {responses: {"200": {description: ok}}}}}
+`
+	res, err := mergeStringsErr(merge.Options{Strict: true}, one, two)
+	if err != nil {
+		t.Fatalf("--strict must survive differing info blocks: %v", err)
+	}
+	var sawBaseOverride bool
+	for _, d := range res.Warnings() {
+		if d.Code == merge.CodeBaseOverride {
+			sawBaseOverride = true
+		}
+	}
+	if !sawBaseOverride {
+		t.Error("the base-override warning should still be reported, just not promoted")
+	}
+}
+
+// The surviving side of a nested-sequence conflict must be attributed to the
+// file it came from, not to whichever document is being merged at the time.
+func TestNestedSequenceConflictNamesTheRightFile(t *testing.T) {
+	const first = `
+openapi: 3.0.3
+info: {title: A, version: "1.0"}
+paths:
+  /u:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    get: {responses: {"200": {description: ok}}}
+`
+	const second = `
+openapi: 3.0.3
+info: {title: A, version: "1.0"}
+paths:
+  /u:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    post: {responses: {"201": {description: ok}}}
+`
+	res := mergeStrings(t, merge.Options{OnConflict: merge.ConflictFirstWins}, first, second)
+	if len(res.Conflicts) != 1 {
+		t.Fatalf("want 1 conflict, got %d", len(res.Conflicts))
+	}
+	c := res.Conflicts[0]
+	if c.Kept.Source != "a.yaml" {
+		t.Errorf("kept side attributed to %q, want a.yaml", c.Kept.Source)
+	}
+	if c.Dropped.Source != "b.yaml" {
+		t.Errorf("dropped side attributed to %q, want b.yaml", c.Dropped.Source)
+	}
+}
+
+// A conflict found while deep-merging must still name both sides: the
+// intermediate pointers were never installed in their own right.
+func TestDeepMergeConflictNamesBothSides(t *testing.T) {
+	const first = `{openapi: 3.0.3, info: {title: G, version: "1"}, paths: {}, x-custom: {a: {b: 1}}}`
+	const second = `{openapi: 3.0.3, info: {title: G, version: "1"}, paths: {}, x-custom: {a: {b: 2}}}`
+
+	_, err := mergeStringsErr(merge.Options{}, first, second)
+	if !errors.Is(err, merge.ErrConflict) {
+		t.Fatalf("want ErrConflict, got %v", err)
+	}
+	var mErr *merge.Error
+	if !errors.As(err, &mErr) {
+		t.Fatal("error should carry a Diagnostic")
+	}
+	if mErr.Diag.Pointer != "/x-custom/a/b" {
+		t.Errorf("pointer = %q", mErr.Diag.Pointer)
+	}
+	if len(mErr.Diag.Related) == 0 || mErr.Diag.Related[0].Source == "" {
+		t.Errorf("the surviving side is unattributed: %+v", mErr.Diag)
+	}
+}
+
+// An exported type must not have a zero value that panics.
+func TestZeroValueMergerWorks(t *testing.T) {
+	var m merge.Merger
+	if err := m.AddBytes("z.yaml", []byte(specA)); err != nil {
+		t.Fatal(err)
+	}
+	res, err := m.Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Sources) != 1 {
+		t.Errorf("sources = %v", res.Sources)
+	}
+}
+
+// Result recomputes its own diagnostics, so finalising twice around an Add
+// must not report the same problem again.
+func TestRepeatedResultDoesNotDuplicateDiagnostics(t *testing.T) {
+	const withExternalRef = `
+openapi: 3.0.3
+info: {title: A, version: "1.0"}
+paths:
+  /x:
+    get:
+      responses:
+        "200": {$ref: "./other.yaml#/components/responses/OK"}
+`
+	var reported []merge.Diagnostic
+	m := merge.New(merge.Options{
+		Reporter: merge.ReporterFunc(func(d merge.Diagnostic) { reported = append(reported, d) }),
+	})
+	if err := m.AddBytes("a.yaml", []byte(withExternalRef)); err != nil {
+		t.Fatal(err)
+	}
+	first, err := m.Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.AddBytes("b.yaml", []byte(specB)); err != nil {
+		t.Fatal(err)
+	}
+	second, err := m.Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count := func(diags []merge.Diagnostic) int {
+		n := 0
+		for _, d := range diags {
+			if d.Code == merge.CodeExternalRef {
+				n++
+			}
+		}
+		return n
+	}
+	if got := count(first.Diagnostics); got != 1 {
+		t.Errorf("first Result reported %d external-ref warnings, want 1", got)
+	}
+	if got := count(second.Diagnostics); got != 1 {
+		t.Errorf("second Result reported %d external-ref warnings, want 1", got)
+	}
+	_ = reported
+}
+
+// A document that contributed nothing is not a source, or the leading empty
+// file would consume the base slot and leave the merge without one.
+func TestSkippedEmptyInputIsNotASource(t *testing.T) {
+	const base = `
+openapi: 3.0.3
+info: {title: Chosen, version: "1.0"}
+paths: {/a: {get: {responses: {"200": {description: ok}}}}}
+`
+	const other = `
+openapi: 3.0.3
+info: {title: Other, version: "9.9"}
+paths: {/b: {get: {responses: {"200": {description: ok}}}}}
+`
+	res, err := merge.Merge(context.Background(), merge.Options{AllowEmptyDocuments: true},
+		merge.BytesSource("empty.yaml", nil),
+		merge.BytesSource("base.yaml", []byte(base)),
+		merge.BytesSource("other.yaml", []byte(other)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Sources) != 2 {
+		t.Errorf("sources = %v, want the two documents that contributed", res.Sources)
+	}
+	if got := yamlOf(t, res); !strings.Contains(got, "title: Chosen") {
+		t.Errorf("the first non-empty input should be the base:\n%s", got)
+	}
+}
+
+// The two options are independent; unused-component reporting must not be
+// switched off as a side effect of skipping reference validation.
+func TestUnusedComponentsReportedWithoutRefValidation(t *testing.T) {
+	const doc = `
+openapi: 3.0.3
+info: {title: A, version: "1.0"}
+paths: {}
+components:
+  schemas:
+    Orphan: {type: object}
+`
+	res := mergeStrings(t, merge.Options{SkipRefValidation: true, ReportUnusedComponents: true}, doc)
+	for _, d := range res.Warnings() {
+		if d.Code == merge.CodeUnusedComponent {
+			return
+		}
+	}
+	t.Errorf("expected an unused-component warning, got %v", res.Warnings())
+}
