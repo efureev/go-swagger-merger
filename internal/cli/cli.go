@@ -158,11 +158,15 @@ func parseSectionPolicies(specs []string) (map[merge.Section]merge.ConflictPolic
 			if !ok {
 				return nil, fmt.Errorf("expected section=policy, got %q", pair)
 			}
+			section, err := merge.ParseSection(strings.TrimSpace(name))
+			if err != nil {
+				return nil, err
+			}
 			policy, err := merge.ParseConflictPolicy(strings.TrimSpace(value))
 			if err != nil {
 				return nil, err
 			}
-			out[merge.Section(strings.TrimSpace(name))] = policy
+			out[section] = policy
 		}
 	}
 	return out, nil

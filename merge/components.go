@@ -72,15 +72,15 @@ func mergeComponentsSection(c *mergeCtx, key string, root *yaml.Node, entry yaml
 	return nil
 }
 
-// checkComponentName reports names that cannot be referenced, since OpenAPI
-// restricts component keys to [a-zA-Z0-9._-].
+// checkComponentName reports names OpenAPI 3 forbids: component keys must
+// match ^[a-zA-Z0-9.\-_]+$.
 func (c *mergeCtx) checkComponentName(container, parentPtr string, entry yamlx.MapEntry) {
 	if validComponentName(entry.Key) {
 		return
 	}
 	c.m.warn(Diagnostic{
 		Code:    CodeInvalidComponentName,
-		Message: fmt.Sprintf("%q is not a valid %s name; it cannot be referenced by $ref", entry.Key, container),
+		Message: fmt.Sprintf("%q is not a valid %s name: OpenAPI 3 allows only letters, digits, '.', '_' and '-'", entry.Key, container),
 		At:      c.loc(entry.Value),
 		Pointer: parentPtr + "/" + yamlx.EscapeToken(entry.Key),
 	})

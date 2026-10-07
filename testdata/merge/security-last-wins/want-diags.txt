@@ -1,0 +1,5 @@
+warn: /security from in-2.yaml replaces the one from in-1.yaml
+  at /security
+  in-2.yaml:4:3
+  in-1.yaml:4:3
+  [replaced]

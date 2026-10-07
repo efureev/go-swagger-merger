@@ -42,6 +42,12 @@ func mergePathsSection(section Section) sectionFunc {
 			if yamlx.Equal(existing, pe.Value) {
 				continue
 			}
+			if c.settleNull(dst, ptr, existing, pe) {
+				if !yamlx.IsNull(pe.Value) {
+					c.indexPathItem(ptr, pe.Value)
+				}
+				continue
+			}
 			if !yamlx.IsMapping(existing) || !yamlx.IsMapping(pe.Value) {
 				if err := c.resolveConflict(section, ptr, dst, pe); err != nil {
 					return err

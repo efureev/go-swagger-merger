@@ -282,3 +282,22 @@ func TestSortMapping(t *testing.T) {
 		t.Errorf("keys = %q, want %q", got, want)
 	}
 }
+
+// A number already spelt the way JSON spells it must pass through as written:
+// a trip through float64 rounds integers past 2^53 and long decimals.
+func TestToJSONKeepsNumberLiterals(t *testing.T) {
+	doc := parse(t, `
+big: 18446744073709551616
+long: 123456789012345678901
+dec: 0.1000000000000000055511151231257827
+short: .5
+`)
+	got, err := ToJSON(doc, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"big":18446744073709551616,"long":123456789012345678901,"dec":0.1000000000000000055511151231257827,"short":0.5}` + "\n"
+	if string(got) != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}

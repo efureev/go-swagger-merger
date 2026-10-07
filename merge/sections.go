@@ -46,8 +46,8 @@ var openapi3Sections = map[string]sectionFunc{
 
 var swagger2Sections = map[string]sectionFunc{
 	"info":                mergeBaseWins(SectionInfo),
-	"host":                mergeBaseWins(SectionRoot),
-	"basePath":            mergeBaseWins(SectionRoot),
+	"host":                mergeLastWins,
+	"basePath":            mergeLastWins,
 	"externalDocs":        mergeBaseWins(SectionExternalDocs),
 	"schemes":             mergeScalarSet,
 	"consumes":            mergeScalarSet,
@@ -62,14 +62,17 @@ var swagger2Sections = map[string]sectionFunc{
 }
 
 // ensure returns the container of the wanted kind stored at root[key],
-// creating it when absent. It returns nil when the key already holds something
-// of a different kind, which the caller reports rather than overwrites.
+// creating it when absent or null. It returns nil when the key already holds
+// something of a different kind, which the caller reports rather than
+// overwrites.
 func (c *mergeCtx) ensure(root *yaml.Node, key string, keyNode *yaml.Node, kind yaml.Kind) *yaml.Node {
 	if existing, ok := yamlx.MapValue(root, key); ok {
 		if existing != nil && existing.Kind == kind {
 			return existing
 		}
-		return nil
+		if !yamlx.IsNull(existing) {
+			return nil
+		}
 	}
 	fresh := yamlx.NewMapping()
 	if kind == yaml.SequenceNode {
@@ -105,10 +108,26 @@ func (c *mergeCtx) put(section Section, parentPtr string, dst *yaml.Node, entry 
 		c.install(dst, ptr, entry)
 		return nil
 	}
-	if yamlx.Equal(existing, entry.Value) {
+	if yamlx.Equal(existing, entry.Value) || c.settleNull(dst, ptr, existing, entry) {
 		return nil
 	}
 	return c.resolveConflict(section, ptr, dst, entry)
+}
+
+// settleNull decides a clash in which one side is null. YAML spells an empty
+// section as a key with no value, and that null is a placeholder rather than a
+// definition: an incoming null adds nothing, and a null already in place gives
+// way to whatever arrives. It reports whether the clash was settled.
+func (c *mergeCtx) settleNull(dst *yaml.Node, ptr string, existing *yaml.Node, entry yamlx.MapEntry) bool {
+	switch {
+	case yamlx.IsNull(entry.Value):
+		return true
+	case yamlx.IsNull(existing):
+		c.install(dst, ptr, entry)
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *mergeCtx) install(dst *yaml.Node, ptr string, entry yamlx.MapEntry) {
@@ -209,7 +228,7 @@ func mergeBaseWins(section Section) sectionFunc {
 			c.install(root, ptr, entry)
 			return nil
 		}
-		if yamlx.Equal(existing, entry.Value) {
+		if yamlx.Equal(existing, entry.Value) || c.settleNull(root, ptr, existing, entry) {
 			return nil
 		}
 		if c.isBase {
@@ -235,8 +254,41 @@ func mergeBaseWins(section Section) sectionFunc {
 	}
 }
 
+// mergeLastWins handles single values whose parts must not be mixed: the root
+// security requirement, and Swagger 2.0's host and basePath. The last input
+// that sets one replaces it whole. Uniting two security lists would OR their
+// alternatives and weaken every operation that inherits them, and paths are
+// relative to basePath, so neither can be combined.
+//
+// The replacement is a warning that --strict promotes: unlike a differing info
+// block, a differing value here changes what the other inputs' paths mean.
+func mergeLastWins(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntry) error {
+	ptr := "/" + yamlx.EscapeToken(key)
+
+	existing, ok := yamlx.MapValue(root, key)
+	if !ok {
+		c.install(root, ptr, entry)
+		return nil
+	}
+	if yamlx.Equal(existing, entry.Value) || c.settleNull(root, ptr, existing, entry) {
+		return nil
+	}
+	previous := c.m.origin[ptr]
+	c.install(root, ptr, entry)
+	c.m.warn(Diagnostic{
+		Code:    CodeReplaced,
+		Message: fmt.Sprintf("%s from %s replaces the one from %s", ptr, c.source, previous.Source),
+		At:      c.loc(entry.Value),
+		Pointer: ptr,
+		Related: []Location{previous},
+	})
+	return nil
+}
+
 // mergeTopNamedMap merges a root-level map of name -> definition, which is how
-// Swagger 2.0 spells what OpenAPI 3 keeps under components.
+// Swagger 2.0 spells what OpenAPI 3 keeps under components. Swagger 2.0 puts
+// no restriction on those names, and generators such as springfox rely on
+// that, so they are not checked against OpenAPI 3's rule.
 func mergeTopNamedMap(section Section) sectionFunc {
 	return func(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntry) error {
 		if !yamlx.IsMapping(entry.Value) {
@@ -248,7 +300,6 @@ func mergeTopNamedMap(section Section) sectionFunc {
 		}
 		ptr := "/" + yamlx.EscapeToken(key)
 		for _, e := range yamlx.Entries(entry.Value) {
-			c.checkComponentName(key, ptr, e)
 			if err := c.put(section, ptr, dst, e); err != nil {
 				return err
 			}
@@ -285,7 +336,7 @@ func (c *mergeCtx) mergeValueAt(section Section, parentPtr string, dst *yaml.Nod
 		c.install(dst, ptr, entry)
 		return nil
 	}
-	if yamlx.Equal(existing, entry.Value) {
+	if yamlx.Equal(existing, entry.Value) || c.settleNull(dst, ptr, existing, entry) {
 		return nil
 	}
 	if depth < maxGenericDepth && yamlx.IsMapping(existing) && yamlx.IsMapping(entry.Value) {

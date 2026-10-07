@@ -42,9 +42,8 @@ type Merger struct {
 	baseFound bool
 
 	// Dedup indexes for the root-level sequences, carried across Add calls.
-	servers  seqIndex
-	tags     seqIndex
-	security seqIndex
+	servers seqIndex
+	tags    seqIndex
 
 	// seqIndexes holds the dedup index of every nested sequence, keyed by its
 	// pointer. Keeping them across Add calls is what lets a conflict name the
@@ -111,9 +110,6 @@ func (m *Merger) init() {
 	}
 	if m.tags == nil {
 		m.tags = seqIndex{}
-	}
-	if m.security == nil {
-		m.security = seqIndex{}
 	}
 	if m.seqIndexes == nil {
 		m.seqIndexes = map[string]seqIndex{}
@@ -183,7 +179,7 @@ func (m *Merger) add(ctx context.Context, src Source) error {
 		m.baseFound = true
 	}
 
-	if err := m.adoptVersion(label, root, isBase); err != nil {
+	if err := m.adoptVersion(label, root); err != nil {
 		return err
 	}
 
@@ -211,7 +207,7 @@ func (m *Merger) add(ctx context.Context, src Source) error {
 	return nil
 }
 
-// isBase reports whether this source supplies info and the spec version.
+// isBase reports whether this source supplies info.
 func (m *Merger) isBase(label string) bool {
 	if m.opts.Base == "" {
 		return len(m.sources) == 0
@@ -219,7 +215,7 @@ func (m *Merger) isBase(label string) bool {
 	return label == m.opts.Base
 }
 
-func (m *Merger) adoptVersion(label string, root *yaml.Node, isBase bool) error {
+func (m *Merger) adoptVersion(label string, root *yaml.Node) error {
 	v, err := DetectVersion(root)
 	if err != nil {
 		if isMissingVersionKey(root) {
@@ -263,8 +259,10 @@ func (m *Merger) adoptVersion(label string, root *yaml.Node, isBase bool) error 
 			Related: []Location{m.versionAt},
 		})
 	}
-	// Keep the newest patch so the result does not understate what it uses.
-	if isBase || m.version.Precedes(v) {
+	// The newest version any input declares, so the result does not
+	// understate what it uses. Which input is the base does not matter here:
+	// letting it win made the outcome depend on the order of the inputs.
+	if m.version.Precedes(v) {
 		m.version, m.versionAt = v, at
 	}
 	return nil
@@ -292,13 +290,6 @@ func (m *Merger) Result() (*Result, error) {
 			Message: "nothing to merge",
 		})
 	}
-	if m.opts.Base != "" && !m.baseFound {
-		m.warn(Diagnostic{
-			Code:    CodeBaseOverride,
-			Message: fmt.Sprintf("base %q was never merged; the first input was used instead", m.opts.Base),
-		})
-	}
-
 	if m.version.IsZero() {
 		return nil, newError("result", ErrInvalidDocument, Diagnostic{
 			Code:    CodeInvalidDocumentCode,
@@ -312,15 +303,24 @@ func (m *Merger) Result() (*Result, error) {
 	m.finalizing = true
 	defer func() { m.finalizing = false }()
 
+	// A finding about the finished merge, so recomputed with the others: a
+	// further Add/Result must not report it twice.
+	if m.opts.Base != "" && !m.baseFound {
+		m.warn(Diagnostic{
+			Code:    CodeBaseOverride,
+			Message: fmt.Sprintf("base %q was never merged; the first input was used instead", m.opts.Base),
+		})
+	}
+
 	// One pass feeds both consumers, which are independently switchable.
 	scan := m.scanRefs()
 	if !m.opts.SkipRefValidation {
-		if err := m.validateRefs(scan.refs, scan.siblings); err != nil {
+		if err := m.validateRefs(scan); err != nil {
 			return nil, err
 		}
 	}
 	if m.opts.ReportUnusedComponents {
-		m.reportUnusedComponents(scan.refs)
+		m.reportUnusedComponents(scan)
 	}
 
 	if m.opts.SortKeys {
@@ -336,7 +336,9 @@ func (m *Merger) Result() (*Result, error) {
 	}
 
 	m.result = &Result{
-		Document:    &Document{node: m.root, version: m.version},
+		// A copy, so that a further Add cannot reach into a Result the caller
+		// already holds.
+		Document:    &Document{node: yamlx.Clone(m.root), version: m.version},
 		Conflicts:   m.conflicts,
 		Diagnostics: diags,
 		Sources:     m.sources,
@@ -360,14 +362,16 @@ func (m *Merger) stampVersion() {
 }
 
 // strictExempt lists the warnings that --strict must not promote, because
-// neither is a defect the caller can act on.
+// none is a defect the caller can act on.
 //
 // A conflict warning exists only because the caller asked for first/last-wins,
-// so promoting it would contradict that choice. A base-override warning is
+// and a version-skew warning only because the caller allowed the skew, so
+// promoting either would contradict that choice. A base-override warning is
 // unavoidable: every input carries its own info block, so promoting it would
 // make --strict fail on every ordinary multi-document merge.
 var strictExempt = map[string]bool{
 	CodeConflict:     true,
+	CodeVersionSkew:  true,
 	CodeBaseOverride: true,
 }
 

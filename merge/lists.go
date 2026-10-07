@@ -28,10 +28,10 @@ var (
 	tagIdentity    = fieldIdentity("name")
 )
 
-// canonicalIdentity identifies an element by its whole content, for elements
-// that have no name of their own such as security requirements.
-func canonicalIdentity(n *yaml.Node) (string, bool) {
-	return "canonical=" + yamlx.Canonical(n), true
+// canonicalIdentity identifies an element by its whole content, the fallback
+// for one that lacks the field that should name it.
+func canonicalIdentity(n *yaml.Node) string {
+	return "canonical=" + yamlx.Canonical(n)
 }
 
 // parameterIdentity follows the spec: a parameter is identified by the pair
@@ -56,8 +56,13 @@ func mergeRootTags(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntr
 	return c.mergeRootSequence(SectionTags, key, root, entry, c.m.tags, tagIdentity, CodeInvalidTag, "tag without a name")
 }
 
+// mergeRootSecurity treats the root security list as one value. Its elements
+// are alternatives, so it is a list only in syntax.
 func mergeRootSecurity(c *mergeCtx, key string, root *yaml.Node, entry yamlx.MapEntry) error {
-	return c.mergeRootSequence(SectionSecurity, key, root, entry, c.m.security, canonicalIdentity, CodeInvalidDocumentCode, "security requirement")
+	if !yamlx.IsSequence(entry.Value) {
+		return c.skipUnexpectedSection(key, "a sequence", entry)
+	}
+	return mergeLastWins(c, key, root, entry)
 }
 
 func (c *mergeCtx) mergeRootSequence(
@@ -92,7 +97,7 @@ func (c *mergeCtx) mergeSequence(
 				At:      c.loc(item),
 				Pointer: ptr,
 			})
-			key, _ = canonicalIdentity(item)
+			key = canonicalIdentity(item)
 		}
 
 		prev, seen := idx[key]
@@ -136,7 +141,7 @@ func (c *mergeCtx) seqIndexFor(ptr string, dst *yaml.Node, id identityFunc) seqI
 	for i, item := range dst.Content {
 		key, natural := id(item)
 		if !natural {
-			key, _ = canonicalIdentity(item)
+			key = canonicalIdentity(item)
 		}
 		if _, exists := idx[key]; !exists {
 			idx[key] = seqEntry{index: i, at: c.m.locateInResult(ptr+"/"+strconv.Itoa(i), item)}

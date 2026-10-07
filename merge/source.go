@@ -75,6 +75,38 @@ func (s Source) read(ctx context.Context) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if s.Reader == nil && s.Path == "" {
+		return nil, fmt.Errorf("%w: source %q has neither Path nor Reader", ErrInvalidDocument, s.Label())
+	}
+	return abandonOnCancel(ctx, s.readAll)
+}
+
+// abandonOnCancel runs a read that may block for as long as its writer likes
+// -- standard input from a terminal, a pipe, a FIFO -- and returns as soon as
+// ctx is cancelled. Nothing can interrupt such a read from outside, so the
+// goroutine running it is left to finish on its own.
+func abandonOnCancel(ctx context.Context, read func() ([]byte, error)) ([]byte, error) {
+	if ctx.Done() == nil {
+		return read()
+	}
+	type result struct {
+		data []byte
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		data, err := read()
+		done <- result{data, err}
+	}()
+	select {
+	case r := <-done:
+		return r.data, r.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (s Source) readAll() ([]byte, error) {
 	switch {
 	case s.Reader != nil:
 		data, err := io.ReadAll(io.LimitReader(s.Reader, MaxInputSize+1))
@@ -87,10 +119,8 @@ func (s Source) read(ctx context.Context) ([]byte, error) {
 		return data, nil
 	case s.Path != "" && s.FS != nil:
 		return fs.ReadFile(s.FS, s.Path)
-	case s.Path != "":
-		return os.ReadFile(s.Path) //nolint:gosec // reading a user-named input is the point
 	default:
-		return nil, fmt.Errorf("%w: source %q has neither Path nor Reader", ErrInvalidDocument, s.Label())
+		return os.ReadFile(s.Path) //nolint:gosec // reading a user-named input is the point
 	}
 }
 

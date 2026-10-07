@@ -38,8 +38,8 @@ swagger-merger validate  [flags] <input...>   Check without writing
 swagger-merger version                        Print version information
 ```
 
-Inputs are merged in order, and `-` reads standard input. The first input supplies `info` and the spec version unless
-`--base` names another.
+Inputs are merged in order, and `-` reads standard input. The first input supplies `info` unless `--base` names
+another. The result declares the newest spec version any input uses.
 
 | Flag                    | Meaning                                                      |
 |-------------------------|--------------------------------------------------------------|
@@ -48,7 +48,7 @@ Inputs are merged in order, and `-` reads standard input. The first input suppli
 | `--indent`              | Indentation width (default `2`)                              |
 | `--on-conflict`         | `error` (default), `first` or `last`                         |
 | `--on-conflict-section` | Per-section policy, e.g. `schemas=first` (repeatable)        |
-| `--base`                | Input whose `info` block and version win                     |
+| `--base`                | Input whose `info` block wins                                |
 | `--sort`                | Canonical key order instead of input order                   |
 | `--no-ref-validation`   | Skip the local `$ref` check                                  |
 | `--allow-version-skew`  | Permit mixing 3.0.x with 3.1.x                               |
@@ -156,21 +156,22 @@ That is enforced by a linter rule, not by convention.
 
 ## Merge semantics
 
-| Section                                                         | Rule                                                          |
-|-----------------------------------------------------------------|---------------------------------------------------------------|
-| `openapi` / `swagger`                                           | Must be compatible; the highest patch within one minor wins   |
-| `info`, `externalDocs`, `host`, `basePath`                      | The base document supplies it; the rest are noted and ignored |
-| `servers`                                                       | Deduplicated by `url`                                         |
-| `tags`                                                          | Deduplicated by `name`                                        |
-| `security`                                                      | Deduplicated by content                                       |
-| `schemes`, `consumes`, `produces`                               | Set union, first-appearance order                             |
-| `paths`, `webhooks`                                             | Merged per path, then **per operation**                       |
-| `components.*`                                                  | Merged per definition name, across all nine component maps    |
-| `definitions`, `parameters`, `responses`, `securityDefinitions` | Swagger 2.0 equivalents, merged per name                      |
-| `x-*` and anything unknown                                      | Mappings deep-merge; other shapes follow the conflict policy  |
+| Section                                                         | Rule                                                           |
+|-----------------------------------------------------------------|----------------------------------------------------------------|
+| `openapi` / `swagger`                                           | Must be compatible; the newest version any input declares wins |
+| `info`, `externalDocs`                                          | The base document supplies it; the rest are noted and ignored  |
+| `security`, `host`, `basePath`                                  | The last input that sets it replaces it whole, with a warning  |
+| `servers`                                                       | Deduplicated by `url`                                          |
+| `tags`                                                          | Deduplicated by `name`                                         |
+| `schemes`, `consumes`, `produces`                               | Set union, first-appearance order                              |
+| `paths`, `webhooks`                                             | Merged per path, then **per operation**                        |
+| `components.*`                                                  | Merged per definition name, across all nine component maps     |
+| `definitions`, `parameters`, `responses`, `securityDefinitions` | Swagger 2.0 equivalents, merged per name                       |
+| `x-*` and anything unknown                                      | Mappings deep-merge; other shapes follow the conflict policy   |
 
 Within a path, `parameters` deduplicate on `(name, in)` and `servers` on `url`, so combining two files that both declare
-the path's `{id}` parameter yields one parameter, not two.
+the path's `{id}` parameter yields one parameter, not two. A key with no value, such as `schemas:` with nothing under
+it, counts as absent: it neither clashes with a definition from another input nor removes one.
 
 Both spec families are supported. Swagger 2.0 and OpenAPI 3.x cannot be merged with each other; 3.0.x and 3.1.x need
 `--allow-version-skew`, because 3.1 changed schema semantics.
@@ -202,12 +203,14 @@ Pick a winner globally with `--on-conflict`, or per section:
 swagger-merger merge --on-conflict=error --on-conflict-section schemas=first ...
 ```
 
-Sections that accept a policy: `info`, `servers`, `tags`, `paths`, `webhooks`,
-`components`, `schemas`, `responses`, `parameters`, `security`, `externalDocs`,
-`extensions`, `root`.
+Sections that accept a policy: `servers`, `tags`, `paths`, `webhooks`,
+`components`, `schemas`, `responses`, `parameters`, `extensions`, `root`. Any
+other name is refused. `info` and `externalDocs` take no policy, since they come
+from the base document, and neither does `security`, which the last input
+replaces whole.
 
-`--strict` promotes warnings to errors. It deliberately leaves conflicts resolved by an explicit `--on-conflict` alone:
-you already said what to do.
+`--strict` promotes warnings to errors. It deliberately leaves conflicts resolved by an explicit `--on-conflict` alone,
+and version skew permitted by `--allow-version-skew`: you already said what to do.
 
 ## Docker
 

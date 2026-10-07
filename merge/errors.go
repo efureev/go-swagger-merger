@@ -52,6 +52,7 @@ const (
 	CodeInvalidTag           = "invalid-tag"
 	CodeDuplicatePathTmpl    = "duplicate-path-template"
 	CodeBaseOverride         = "base-override"
+	CodeReplaced             = "replaced"
 	CodeEmptyDocument        = "empty-document"
 	CodeUnusedComponent      = "unused-component"
 	CodeInvalidComponentName = "invalid-component-name"

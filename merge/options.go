@@ -1,11 +1,17 @@
 package merge
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Section names a top-level area of the merge, used to scope conflict policy.
 type Section string
 
-// Sections that can carry their own conflict policy.
+// Sections of the merge. Every one but SectionInfo, SectionExternalDocs and
+// SectionSecurity can carry its own conflict policy. The first two come from
+// the base document, and the last input that sets security replaces it whole;
+// no policy is consulted for any of them.
 const (
 	SectionInfo         Section = "info"
 	SectionServers      Section = "servers"
@@ -21,6 +27,37 @@ const (
 	SectionExtensions   Section = "extensions"
 	SectionRoot         Section = "root"
 )
+
+// policySections lists, in documentation order, the sections a conflict
+// policy governs.
+var policySections = []Section{
+	SectionServers, SectionTags, SectionPaths, SectionWebhooks,
+	SectionComponents, SectionSchemas, SectionResponses, SectionParameters,
+	SectionExtensions, SectionRoot,
+}
+
+// ParseSection accepts the name of a section that takes a conflict policy.
+// A misspelt name, or one no policy governs, is refused: accepting it would
+// change nothing and leave the caller to meet the conflict they meant to
+// resolve.
+func ParseSection(s string) (Section, error) {
+	for _, sec := range policySections {
+		if string(sec) == s {
+			return sec, nil
+		}
+	}
+	switch Section(s) {
+	case SectionInfo, SectionExternalDocs:
+		return "", fmt.Errorf("%s takes no conflict policy: it comes from the base document", s)
+	case SectionSecurity:
+		return "", fmt.Errorf("%s takes no conflict policy: the last input that sets it replaces it whole", s)
+	}
+	names := make([]string, len(policySections))
+	for i, sec := range policySections {
+		names[i] = string(sec)
+	}
+	return "", fmt.Errorf("unknown section %q (want one of %s)", s, strings.Join(names, ", "))
+}
 
 // ConflictPolicy decides what happens when two inputs define the same key
 // with different content. Structurally identical definitions never reach a
@@ -85,8 +122,9 @@ type Options struct {
 	// SectionPolicy overrides OnConflict for individual sections.
 	SectionPolicy map[Section]ConflictPolicy
 
-	// Base names the Source whose info block and spec version win. Empty
-	// means the first source added.
+	// Base names the Source whose info block wins. Empty means the first
+	// source added. The result declares the newest spec version any source
+	// uses, whichever source is the base.
 	Base string
 
 	// SortKeys emits a canonical key order instead of input order.

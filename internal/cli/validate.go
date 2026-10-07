@@ -27,7 +27,7 @@ func validateFlags(cfg *validateConfig, w io.Writer) *flag.FlagSet {
 
 	fs.Var(&cfg.inputs, "i", "Input file (repeatable; positional arguments work too)")
 	fs.StringVar(&cfg.onConflict, "on-conflict", "error", "How to resolve conflicts: error, first or last")
-	fs.StringVar(&cfg.base, "base", "", "Input whose info block and version win (default: the first input)")
+	fs.StringVar(&cfg.base, "base", "", "Input whose info block wins (default: the first input)")
 	fs.BoolVar(&cfg.allowSkew, "allow-version-skew", false, "Allow merging 3.0.x with 3.1.x")
 	fs.BoolVar(&cfg.strict, "strict", false, "Treat warnings as errors")
 	fs.BoolVar(&cfg.allowEmpty, "allow-empty", false, "Skip empty inputs instead of failing")

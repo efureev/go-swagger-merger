@@ -8,6 +8,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A `$ref` in a property named like a spec field — `content`, `links`,
+  `headers`, `parameters`, `examples` and the like — was never checked, so a
+  dangling one shipped and its target was reported as unused. Whether a key is
+  a spec field or an author's name is now decided from the whole pointer.
+- Every security scheme was reported as unused, so `validate --strict` failed
+  on any secured spec: requirements name schemes directly, not through a
+  `$ref`. A scheme named by a security requirement now counts as used.
+- Example payloads were checked for `$ref`: Swagger 2.0 response `examples`
+  and 3.1 schema `examples` are data. 3.x Example Objects are still checked.
+- A 3.1 schema with keywords beside its `$ref` drew a warning, and so failed
+  `--strict`, although JSON Schema 2020-12 applies them. Other 3.1 references
+  are still limited to `summary` and `description`.
+- A 3.1 reference to a `$anchor`, such as `#foo`, was reported as dangling.
+- Swagger 2.0 definition names were held to OpenAPI 3's character rule, so
+  springfox names such as `ResponseEntity«User»` failed `--strict`. The
+  warning for OpenAPI 3 names no longer claims they cannot be referenced.
+- An empty section, such as `schemas:` with nothing under it, a path or an
+  operation without a value, or `info: null`, clashed with the real
+  definition in another input, or with a first-wins policy erased it. A key
+  with no value now counts as absent.
+- Ctrl-C did not stop a merge waiting on standard input or a FIFO. A read is
+  now abandoned when the merge is cancelled.
+- `--on-conflict-section` accepted any name, so a typo such as `schema=first`
+  changed nothing. Unknown sections are refused, and so are `info` and
+  `externalDocs`, which come from the base document and take no policy.
+- After a further `Add`, `Result` repeated the notice that the named base was
+  never merged, and the `Result` already returned changed with the new input.
+- JSON output rounded integers past 2^53 and long decimals through `float64`.
+  A number already spelt the JSON way is now written as it was given.
+- `--strict` failed every merge it was told to allow with
+  `--allow-version-skew`.
+- The declared spec version depended on the order of the inputs when `--base`
+  was given. It is now the newest version any input declares.
+- Root `security` lists were united. Their elements are alternatives, so the
+  union let either input's credentials through for every operation that
+  inherits the requirement, and an explicitly public `security: []` gained
+  authentication. The list is now one value: the last input that sets it
+  replaces it whole.
+- Swagger 2.0 `basePath` and `host` came from the base document, so the
+  other inputs' paths silently moved under a different base. The last input
+  that sets them now wins.
 - A tag push moved `latest` whatever the tag was, so a prerelease or a patch to
   an older release line took it over. `latest` now moves for the newest stable
   tag only, whether the image is published by a tag push or by hand, which
@@ -33,10 +74,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `2.1.1`, as `go install`, `make build` and the image already did.
 - A manual image publish no longer takes a `latest` input: whether `latest`
   moves follows from the version.
+- Replacing `security`, `host` or `basePath` with a different value is
+  reported as a `replaced` warning, which `--strict` promotes. `security` no
+  longer takes a conflict policy.
+- `--base` and `Options.Base` choose the `info` block only. The spec version
+  was documented as the base's too, but the newest version already won unless
+  the base came last.
 
 ### Added
 
 - OCI `version`, `revision` and `created` labels on the image.
+- `merge.ParseSection`, which accepts the name of a section that takes a
+  conflict policy.
 
 ## [2.1.1] — 2026-08-23
 

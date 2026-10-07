@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -102,8 +103,17 @@ func jsonKey(n *yaml.Node) string {
 	return Canonical(n)
 }
 
+// jsonNumber matches a number spelt the way JSON spells it.
+var jsonNumber = regexp.MustCompile(`^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$`)
+
 func jsonScalar(n *yaml.Node) string {
-	switch Tag(n) {
+	tag := Tag(n)
+	// A literal JSON can already read passes through as written: a trip
+	// through float64 would round integers past 2^53 and long decimals.
+	if (tag == TagInt || tag == TagFloat) && jsonNumber.MatchString(n.Value) {
+		return n.Value
+	}
+	switch tag {
 	case TagNull:
 		return "null"
 	case TagBool:

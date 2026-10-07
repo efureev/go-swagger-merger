@@ -38,7 +38,7 @@ func mergeFlags(cfg *mergeConfig, w io.Writer) *flag.FlagSet {
 	fs.IntVar(&cfg.indent, "indent", merge.DefaultIndent, "Indentation width")
 	fs.StringVar(&cfg.onConflict, "on-conflict", "error", "How to resolve conflicts: error, first or last")
 	fs.Var(&cfg.sectionPolicy, "on-conflict-section", "Per-section policy, e.g. schemas=first (repeatable)")
-	fs.StringVar(&cfg.base, "base", "", "Input whose info block and version win (default: the first input)")
+	fs.StringVar(&cfg.base, "base", "", "Input whose info block wins (default: the first input)")
 	fs.BoolVar(&cfg.sortKeys, "sort", false, "Emit keys in canonical order instead of input order")
 	fs.BoolVar(&cfg.noRefValidation, "no-ref-validation", false, "Do not check that local $refs resolve")
 	fs.BoolVar(&cfg.allowSkew, "allow-version-skew", false, "Allow merging 3.0.x with 3.1.x")
@@ -58,8 +58,9 @@ func mergeFlags(cfg *mergeConfig, w io.Writer) *flag.FlagSet {
 Usage:
   swagger-merger merge [flags] <input...>
 
-Inputs are merged in order. The first supplies the info block and the spec
-version unless --base names another. "-" reads standard input.
+Inputs are merged in order. The first supplies the info block unless --base
+names another, and the result declares the newest spec version any input
+uses. "-" reads standard input.
 
 Flags:
 `)

@@ -388,6 +388,14 @@ func TestParseSectionPolicies(t *testing.T) {
 	if _, err := parseSectionPolicies([]string{"schemas=nonsense"}); err == nil {
 		t.Error("expected an error for an unknown policy")
 	}
+	// A typo, or a section no policy governs, would otherwise be accepted and
+	// do nothing, leaving the user to meet the very conflict they meant to
+	// resolve.
+	for _, spec := range []string{"schema=first", "info=last", "externalDocs=first", "security=first"} {
+		if _, err := parseSectionPolicies([]string{spec}); err == nil {
+			t.Errorf("expected an error for %q", spec)
+		}
+	}
 }
 
 func TestResolveFormat(t *testing.T) {
