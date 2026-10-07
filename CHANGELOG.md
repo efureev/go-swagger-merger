@@ -4,7 +4,13 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] — 2026-10-07
+
+Fixes from a review of the whole library and its release plumbing. Two merge
+rules change: the root `security` list and Swagger 2.0's `host` and
+`basePath` are replaced whole by the last input that sets them instead of
+being united or taken from the base, and the declared spec version is the
+newest any input uses, whichever input is the base.
 
 ### Fixed
 
