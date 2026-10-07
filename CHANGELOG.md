@@ -4,16 +4,52 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- A tag push moved `latest` whatever the tag was, so a prerelease or a patch to
+  an older release line took it over. `latest` now moves for the newest stable
+  tag only, whether the image is published by a tag push or by hand, which
+  also lets a manual re-run of the newest release move it.
+- A manual image publish accepted any name as its tag, so a branch name built
+  unreleased code and published it under that name. The input must now be a
+  version tag.
+- The image carried no build time, so `swagger-merger version` printed no
+  `built:` line in it, and `make image` stamped no version at all.
+- The GitHub release of a version made only of documentation and CI changes
+  had empty notes. The notes are now that version's entry in this changelog.
+- The Docker instructions led with a write into a bind mount, which fails on
+  Linux because the image runs as `nonroot`, and the migration guide still
+  showed the v1 command, which only worked because the v1 image ran as root.
+  Both now use `--user`, and the README no longer says Docker Desktop on
+  Windows maps ownership for files inside WSL 2.
+- The note explaining the conflict example's name was published on
+  pkg.go.dev as the example's text.
+
+### Changed
+
+- Release binaries report their version as the tag, `v2.1.1` rather than
+  `2.1.1`, as `go install`, `make build` and the image already did.
+- A manual image publish no longer takes a `latest` input: whether `latest`
+  moves follows from the version.
+
+### Added
+
+- OCI `version`, `revision` and `created` labels on the image.
+
 ## [2.1.1] — 2026-08-23
 
-Documentation and release plumbing only; the library and the CLI are byte for
-byte what 2.1.0 shipped.
+Documentation and release plumbing only. The library and the CLI are
+unchanged; a binary built from 2.1.1 differs from a 2.1.0 one only in the
+version stamped into it.
 
 ### Fixed
 
 - The conflict example ran as a test but appeared nowhere in the published
-  documentation: an example attached to a name inside a grouped `var` block is
-  not rendered on pkg.go.dev. It is now a variant of `Merge`.
+  documentation: go/doc attaches examples to functions, types and methods
+  only, never to a variable such as `ErrConflict`. It is now a variant of
+  `Merge`.
 - Publishing the image for an older tag by hand moved `latest` onto it, and
   stamped it with the commit of the branch the run started from rather than
   the one it was built from.

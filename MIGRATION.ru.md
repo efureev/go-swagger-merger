@@ -116,15 +116,26 @@ return os.WriteFile("out.yaml", out, 0o644)
 
 ## Docker
 
-Образ v1 не объявлял `ENTRYPOINT`, поэтому `docker run` ничего не делал. В v2:
+Образ v1 не объявлял `ENTRYPOINT`, поэтому `docker run` ничего не делал. В v2
+рабочий каталог — `/data`, поэтому пути указываются относительно точки
+монтирования:
 
 ```shell
-docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
-  merge -o /data/swagger.yml /data/a.yml /data/b.yml
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" \
+  ghcr.io/efureev/go-swagger-merger merge -o swagger.yml a.yml b.yml
 ```
 
-Образ теперь построен на `distroless/static`, работает от непривилегированного
-пользователя и публикуется для `linux/amd64` и `linux/arm64`.
+Образ теперь построен на `distroless/static`, работает от `nonroot` (uid 65532)
+вместо root и публикуется для `linux/amd64` и `linux/arm64`. Поэтому в команде
+выше стоит `--user`: на Linux bind-mount сохраняет владельца с хоста, и запись,
+которая в v1 проходила от root, теперь падает с `permission denied`, если
+контейнер не запущен от вашего uid. Вывод в stdout вообще не требует права на
+запись:
+
+```shell
+docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
+  merge a.yml b.yml > swagger.yml
+```
 
 ## Чего v2 не делает
 

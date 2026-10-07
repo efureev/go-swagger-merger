@@ -14,7 +14,9 @@ builds:
     flags: [-trimpath]
     ldflags:
       - -s -w
-      - -X main.version={{ .Version }}
+      # The tag rather than .Version, which drops the leading v: go install,
+      # make build and the image all report v2.1.0, and so must the binaries.
+      - -X main.version={{ .Tag }}
       - -X main.commit={{ .Commit }}
       - -X main.date={{ .Date }}
     goos: [linux, darwin, windows]

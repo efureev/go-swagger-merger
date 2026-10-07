@@ -4,6 +4,7 @@ FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 ARG VERSION=dev
 ARG COMMIT=""
+ARG DATE=""
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -18,7 +19,7 @@ COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
     go build -trimpath \
-      -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
+      -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
       -o /out/swagger-merger ./cmd/swagger-merger
 
 FROM gcr.io/distroless/static:nonroot

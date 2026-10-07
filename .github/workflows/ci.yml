@@ -99,11 +99,20 @@ jobs:
           push: false
           load: true
           tags: swagger-merger:ci
+      # Runs the invocations the README documents, so they cannot break
+      # unnoticed: relative paths resolved against the /data working
+      # directory, and a write into a host-owned bind mount with --user.
       - name: Smoke-test the image
         run: |
           set -euo pipefail
           docker run --rm swagger-merger:ci version
           docker run --rm -v "$PWD/testdata/merge/paths-by-operation:/data:ro" swagger-merger:ci \
-            merge /data/in-1.yaml /data/in-2.yaml | tee /tmp/out.yaml
+            merge in-1.yaml in-2.yaml | tee /tmp/out.yaml
           grep -q 'get:'  /tmp/out.yaml
           grep -q 'post:' /tmp/out.yaml
+
+          work=$(mktemp -d)
+          cp testdata/merge/paths-by-operation/in-*.yaml "$work"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$work:/data" swagger-merger:ci \
+            merge -o out.yaml in-1.yaml in-2.yaml
+          cmp /tmp/out.yaml "$work/out.yaml"

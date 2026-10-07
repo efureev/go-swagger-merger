@@ -10,10 +10,6 @@ on:
       tag:
         description: 'Tag to publish the image for, e.g. v2.0.0'
         required: true
-      latest:
-        description: 'Also move the latest tag onto this image'
-        type: boolean
-        default: false
 
 # The binaries and the image are separate deliverables, so they are separate
 # jobs: a registry permission problem must not stop the release from
@@ -35,10 +31,29 @@ jobs:
         with:
           go-version: stable
 
+      # The release notes are this version's CHANGELOG entry. Notes built from
+      # commit subjects come out empty for a release made only of docs and ci
+      # commits, which the changelog filter drops; that is how 2.1.1 shipped.
+      - name: Extract the release notes
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          notes="$RUNNER_TEMP/release-notes.md"
+          awk -v head="## [${TAG#v}]" '
+            /^## \[/ { if (found) exit; found = index($0, head) == 1; next }
+            found && (NF || started) { started = 1; print }
+          ' CHANGELOG.md > "$notes"
+          if [ -s "$notes" ]; then
+            echo "args=--release-notes=$notes" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::CHANGELOG.md has no entry for ${TAG#v}; the release notes fall back to commit subjects"
+          fi
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean
+          args: release --clean ${{ steps.notes.outputs.args }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -46,15 +61,27 @@ jobs:
     name: image
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: write
     env:
-      VERSION: ${{ inputs.tag || github.ref_name }}
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      # Before the checkout, which resolves an unqualified name as a branch
+      # first: a branch name would build unreleased code and publish it under
+      # that name.
+      - name: Check the tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$TAG' is not a version tag such as v2.1.0"
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: refs/tags/${{ env.TAG }}
 
-      - uses: docker/setup-qemu-action@v4
+      # The final stage only copies a binary cross-compiled on the build
+      # platform, so no emulation is needed for the arm64 image.
       - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
@@ -68,22 +95,32 @@ jobs:
           # this repository linkage, so until it is linked the push is denied.
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # A tag push is always the newest release, so it takes latest. A manual
-      # run is a backfill of an older tag, so it must not drag latest
-      # backwards unless that is explicitly asked for.
-      - name: Work out the image tags and commit
+      # latest belongs to the newest stable release, however the run started.
+      # A prerelease, a patch to an older line or a backfill of an old tag must
+      # not take it over, and a manual re-run of the newest release after a
+      # failed tag push must still move it. Deciding by the event got one of
+      # those wrong either way.
+      - name: Work out the image tags and stamps
         id: meta
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
         run: |
+          newest=$(git ls-remote --tags --refs origin \
+            | sed 's#.*refs/tags/##' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1)
           {
             # From the checkout, not from github.sha: a manual run starts on
             # the default branch, so github.sha is that branch's head while
             # the sources come from the tag, and the image would be stamped
             # with a commit it was not built from.
             echo "sha=$(git rev-parse HEAD)"
-            echo "list<<TAGS"
-            echo "ghcr.io/${{ github.repository }}:${VERSION}"
-            if [ "${{ github.event_name }}" = push ] || [ "${{ inputs.latest }}" = true ]; then
-              echo "ghcr.io/${{ github.repository }}:latest"
+            # The same RFC 3339 build time GoReleaser stamps into the binaries.
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "tags<<TAGS"
+            echo "${IMAGE}:${TAG}"
+            if [ "$TAG" = "$newest" ]; then
+              echo "${IMAGE}:latest"
             fi
             echo "TAGS"
           } >> "$GITHUB_OUTPUT"
@@ -94,7 +131,12 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.list }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            org.opencontainers.image.version=${{ env.TAG }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.date }}
           build-args: |
-            VERSION=${{ env.VERSION }}
+            VERSION=${{ env.TAG }}
             COMMIT=${{ steps.meta.outputs.sha }}
+            DATE=${{ steps.meta.outputs.date }}

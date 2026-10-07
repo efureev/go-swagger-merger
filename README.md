@@ -211,23 +211,20 @@ you already said what to do.
 
 ## Docker
 
-Published to GHCR for `linux/amd64` and `linux/arm64`. Pull `latest`, or pin a
-version:
+Published to GHCR for `linux/amd64` and `linux/arm64`. Pull `latest`, which
+follows the newest stable release, or pin one of the
+[released versions](https://github.com/efureev/go-swagger-merger/releases):
 
 ```shell
 docker pull ghcr.io/efureev/go-swagger-merger:latest
-docker pull ghcr.io/efureev/go-swagger-merger:v2.1.0
+docker pull ghcr.io/efureev/go-swagger-merger:vX.Y.Z
 ```
 
 The working directory is `/data`, so mount your specs there and the paths stay
 short:
 
 ```shell
-# Merge into a file
-docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
-  merge -o swagger.yml users.yml orders.yml
-
-# Or to stdout, with the input mounted read-only
+# Merge to stdout, with the input mounted read-only
 docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
   merge users.yml orders.yml > swagger.yml
 
@@ -236,14 +233,19 @@ docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
   validate --strict users.yml orders.yml
 ```
 
-The image is `distroless/static` and runs as `nonroot` (uid 65532). On Linux a
-bind mount keeps the host's ownership, so writing a file into it needs your own
-uid — Docker Desktop on macOS and Windows maps this for you:
+To write the file from inside the container with `-o`, run as your own uid.
+The image is `distroless/static` and runs as `nonroot` (uid 65532), while a
+bind mount on Linux keeps the host's ownership, so without `--user` the write
+fails with `permission denied`:
 
 ```shell
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" \
   ghcr.io/efureev/go-swagger-merger merge -o swagger.yml users.yml orders.yml
 ```
+
+Docker Desktop on macOS, and on Windows for files on a Windows drive, maps the
+ownership itself, so there the flag can be left out. Files inside a WSL 2
+distribution behave as on Linux and need it.
 
 ## GitHub Actions
 

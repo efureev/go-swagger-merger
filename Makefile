@@ -49,7 +49,8 @@ tidy: ## Tidy the module
 	go mod tidy
 
 image: ## Build the Docker image
-	docker build -t swagger-merger:$(VERSION) .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
+	  --build-arg DATE=$(DATE) -t swagger-merger:$(VERSION) .
 
 clean: ## Remove build artefacts
 	rm -rf bin dist coverage.out

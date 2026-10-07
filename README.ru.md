@@ -230,23 +230,20 @@ swagger-merger merge --on-conflict=error --on-conflict-section schemas=first ...
 
 ## Docker
 
-Опубликован в GHCR для `linux/amd64` и `linux/arm64`. Тяните `latest` либо
-фиксируйте версию:
+Опубликован в GHCR для `linux/amd64` и `linux/arm64`. Тяните `latest` — он
+следует за новейшим стабильным релизом — либо фиксируйте одну из
+[выпущенных версий](https://github.com/efureev/go-swagger-merger/releases):
 
 ```shell
 docker pull ghcr.io/efureev/go-swagger-merger:latest
-docker pull ghcr.io/efureev/go-swagger-merger:v2.1.0
+docker pull ghcr.io/efureev/go-swagger-merger:vX.Y.Z
 ```
 
 Рабочий каталог — `/data`, поэтому монтируйте спецификации туда, и пути
 останутся короткими:
 
 ```shell
-# Слияние в файл
-docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
-  merge -o swagger.yml users.yml orders.yml
-
-# Либо в stdout, с входными данными только на чтение
+# Слияние в stdout, с входными данными только на чтение
 docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
   merge users.yml orders.yml > swagger.yml
 
@@ -255,14 +252,19 @@ docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
   validate --strict users.yml orders.yml
 ```
 
-Образ построен на `distroless/static` и работает от `nonroot` (uid 65532). На
-Linux bind-mount сохраняет владельца с хоста, поэтому для записи файла внутрь
-понадобится ваш uid — Docker Desktop на macOS и Windows подставляет его сам:
+Чтобы записать файл изнутри контейнера через `-o`, запускайте от своего uid.
+Образ построен на `distroless/static` и работает от `nonroot` (uid 65532), а
+bind-mount на Linux сохраняет владельца с хоста, поэтому без `--user` запись
+падает с `permission denied`:
 
 ```shell
 docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" \
   ghcr.io/efureev/go-swagger-merger merge -o swagger.yml users.yml orders.yml
 ```
+
+Docker Desktop на macOS, а на Windows — для файлов на диске Windows, сам
+сопоставляет владельца, так что там флаг можно опустить. Файлы внутри
+дистрибутива WSL 2 ведут себя как на Linux, и флаг им нужен.
 
 ## GitHub Actions
 

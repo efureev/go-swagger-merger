@@ -114,15 +114,25 @@ Other differences worth knowing:
 
 ## Docker
 
-The v1 image declared no `ENTRYPOINT`, so `docker run` did nothing. In v2:
+The v1 image declared no `ENTRYPOINT`, so `docker run` did nothing. In v2 the
+working directory is `/data`, so paths are relative to the mount:
 
 ```shell
-docker run --rm -v "$PWD:/data" ghcr.io/efureev/go-swagger-merger \
-  merge -o /data/swagger.yml /data/a.yml /data/b.yml
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/data" \
+  ghcr.io/efureev/go-swagger-merger merge -o swagger.yml a.yml b.yml
 ```
 
-The image is now `distroless/static`, runs as non-root, and is published for
-both `linux/amd64` and `linux/arm64`.
+The image is now `distroless/static`, runs as `nonroot` (uid 65532) instead of
+root, and is published for both `linux/amd64` and `linux/arm64`. That is why
+the command above carries `--user`: on Linux a bind mount keeps the host's
+ownership, so a write that worked as root in v1 now fails with
+`permission denied` unless the container runs as your own uid. Writing to
+stdout instead needs no write access at all:
+
+```shell
+docker run --rm -v "$PWD:/data:ro" ghcr.io/efureev/go-swagger-merger \
+  merge a.yml b.yml > swagger.yml
+```
 
 ## What v2 does not do
 
