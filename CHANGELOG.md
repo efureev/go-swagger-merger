@@ -4,7 +4,10 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.3.0] — 2026-10-08
+
+Inputs can now be listed in a file, which keeps a long and order-sensitive
+list of specifications out of the command line.
 
 ### Added
 
