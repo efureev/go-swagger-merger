@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `--files-from` for `merge` and `validate`: a plain-text file listing the
+  inputs, one per line, relative to the file itself, with `#` comments. It can
+  be repeated and combined with other inputs, which keep the order they are
+  named in, and `-` reads the list from standard input. A listed document that
+  does not exist is reported with the list's line number.
+
 ## [2.2.0] — 2026-10-07
 
 Fixes from a review of the whole library and its release plumbing. Two merge

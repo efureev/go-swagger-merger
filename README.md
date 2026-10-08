@@ -43,6 +43,7 @@ another. The result declares the newest spec version any input uses.
 
 | Flag                    | Meaning                                                      |
 |-------------------------|--------------------------------------------------------------|
+| `--files-from`          | File listing inputs, one per line (repeatable)               |
 | `-o`, `--output`        | Output file, or `-` for stdout (default `-`)                 |
 | `--format`              | `yaml` or `json`; inferred from the `-o` extension otherwise |
 | `--indent`              | Indentation width (default `2`)                              |
@@ -73,6 +74,34 @@ swagger-merger validate --strict specs/*.yaml
 # Pipelines work
 cat base.yaml | swagger-merger merge - extra.yaml > out.yaml
 ```
+
+### Inputs listed in a file
+
+When the order matters or the list grows long, keep it in a file and pass it with `--files-from`:
+
+```text
+# docs/swagger.list — the base comes first
+base.yml
+
+users/users.yml        # users
+../shared/errors.yml
+
+# orders.yml — disabled for now
+```
+
+```shell
+swagger-merger merge -o docs/swagger.yml --files-from docs/swagger.list
+swagger-merger validate --strict --files-from docs/swagger.list
+```
+
+- One path per line, relative to the list's own directory; absolute paths are taken as they are.
+- `#` at the start of a line or after a space or tab starts a comment, so `a#b.yml` is still a file name. Blank lines
+  are skipped.
+- Documents are merged in the order listed, and the first is the base unless `--base` names another.
+- `--files-from` can be repeated and combined with `-i` and positional inputs; everything keeps the order it is named
+  in, positional inputs last.
+- `--files-from -` reads the list from standard input, with paths relative to the working directory.
+- A listed document that does not exist is reported with the list's line number.
 
 ## Library
 

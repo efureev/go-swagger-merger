@@ -11,7 +11,7 @@ import (
 )
 
 type validateConfig struct {
-	inputs     stringList
+	inputs     inputArgs
 	onConflict string
 	base       string
 	allowSkew  bool
@@ -25,7 +25,8 @@ func validateFlags(cfg *validateConfig, w io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.SetOutput(w)
 
-	fs.Var(&cfg.inputs, "i", "Input file (repeatable; positional arguments work too)")
+	fs.Var(inputFlag{args: &cfg.inputs}, "i", "Input file (repeatable; positional arguments work too)")
+	fs.Var(inputFlag{args: &cfg.inputs, list: true}, "files-from", "File listing inputs, one per line, relative to it (repeatable)")
 	fs.StringVar(&cfg.onConflict, "on-conflict", "error", "How to resolve conflicts: error, first or last")
 	fs.StringVar(&cfg.base, "base", "", "Input whose info block wins (default: the first input)")
 	fs.BoolVar(&cfg.allowSkew, "allow-version-skew", false, "Allow merging 3.0.x with 3.1.x")
@@ -44,6 +45,11 @@ conflicting definitions or incompatible spec versions.
 
 Usage:
   swagger-merger validate [flags] <input...>
+
+--files-from names a file listing inputs, one per line, resolved against
+the file's own directory; "#" at the start of a line or after a space starts
+a comment, and "-" reads the list from standard input. Inputs keep the order
+they are named in, whether by -i, --files-from or position.
 
 Flags:
 `)
@@ -68,11 +74,9 @@ func runValidate(ctx context.Context, args []string, stdio IO) int {
 		return ExitUsage
 	}
 
-	inputs := append([]string(cfg.inputs), fs.Args()...)
-	if len(inputs) == 0 {
-		fmt.Fprintln(stdio.Err, "error: no input documents")
-		fs.Usage()
-		return ExitUsage
+	inputs, code := collectInputs(cfg.inputs, fs, stdio)
+	if code != ExitOK {
+		return code
 	}
 
 	policy, err := merge.ParseConflictPolicy(cfg.onConflict)
@@ -87,7 +91,7 @@ func runValidate(ctx context.Context, args []string, stdio IO) int {
 
 	opts := merge.Options{
 		OnConflict:             policy,
-		Base:                   cfg.base,
+		Base:                   resolveBase(cfg.base, inputs),
 		AllowVersionSkew:       cfg.allowSkew,
 		Strict:                 cfg.strict,
 		AllowEmptyDocuments:    cfg.allowEmpty,

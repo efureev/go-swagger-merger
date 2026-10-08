@@ -12,7 +12,7 @@ import (
 
 type mergeConfig struct {
 	output          string
-	inputs          stringList
+	inputs          inputArgs
 	format          string
 	indent          int
 	onConflict      string
@@ -33,7 +33,8 @@ func mergeFlags(cfg *mergeConfig, w io.Writer) *flag.FlagSet {
 	fs.SetOutput(w)
 
 	fs.StringVar(&cfg.output, "o", "-", `Output file, or "-" for stdout`)
-	fs.Var(&cfg.inputs, "i", "Input file (repeatable; positional arguments work too)")
+	fs.Var(inputFlag{args: &cfg.inputs}, "i", "Input file (repeatable; positional arguments work too)")
+	fs.Var(inputFlag{args: &cfg.inputs, list: true}, "files-from", "File listing inputs, one per line, relative to it (repeatable)")
 	fs.StringVar(&cfg.format, "format", "", "Output format: yaml or json (default: inferred from -o)")
 	fs.IntVar(&cfg.indent, "indent", merge.DefaultIndent, "Indentation width")
 	fs.StringVar(&cfg.onConflict, "on-conflict", "error", "How to resolve conflicts: error, first or last")
@@ -62,6 +63,11 @@ Inputs are merged in order. The first supplies the info block unless --base
 names another, and the result declares the newest spec version any input
 uses. "-" reads standard input.
 
+--files-from names a file listing inputs, one per line, resolved against
+the file's own directory; "#" at the start of a line or after a space starts
+a comment, and "-" reads the list from standard input. Inputs keep the order
+they are named in, whether by -i, --files-from or position.
+
 Flags:
 `)
 		fs.PrintDefaults()
@@ -75,6 +81,7 @@ Examples:
   swagger-merger merge -o docs/swagger.yml docs/users.yml docs/orders.yml
   swagger-merger merge --on-conflict=first -o api.json a.yaml b.yaml
   cat spec.yaml | swagger-merger merge - extra.yaml
+  swagger-merger merge -o docs/swagger.yml --files-from docs/swagger.list
 `)
 	}
 	return fs
@@ -119,11 +126,9 @@ func runMerge(ctx context.Context, args []string, stdio IO) int {
 		return ExitUsage
 	}
 
-	inputs := append([]string(cfg.inputs), fs.Args()...)
-	if len(inputs) == 0 {
-		fmt.Fprintln(stdio.Err, "error: no input documents")
-		fs.Usage()
-		return ExitUsage
+	inputs, code := collectInputs(cfg.inputs, fs, stdio)
+	if code != ExitOK {
+		return code
 	}
 
 	opts, err := cfg.options(stdio.Err)
@@ -131,6 +136,7 @@ func runMerge(ctx context.Context, args []string, stdio IO) int {
 		fmt.Fprintf(stdio.Err, "error: %s\n", err)
 		return ExitUsage
 	}
+	opts.Base = resolveBase(opts.Base, inputs)
 	format, err := resolveFormat(cfg.format, cfg.output)
 	if err != nil {
 		fmt.Fprintf(stdio.Err, "error: %s\n", err)
